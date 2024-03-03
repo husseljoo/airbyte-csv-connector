@@ -1,0 +1,30 @@
+data:
+  allowedHosts:
+    hosts:
+      - TODO # Please change to the hostname of the source.
+  registries:
+    oss:
+      enabled: true
+    cloud:
+      enabled: false
+  connectorBuildOptions:
+    # Please update to the latest version of the connector base image.
+    # Please use the full address with sha256 hash to guarantee build reproducibility.
+    # https://hub.docker.com/r/airbyte/python-connector-base
+    baseImage: docker.io/airbyte/python-connector-base:1.0.0@sha256:dd17e347fbda94f7c3abff539be298a65af2d7fc27a307d89297df1081a45c27
+  connectorSubtype: database
+  connectorType: destination
+  definitionId: ffa2e522-bcda-4994-aac6-d44bce6297e7
+  dockerImageTag: 0.1.0
+  dockerRepository: airbyte/destination-sftp-csv
+  githubIssueLabel: destination-sftp-csv
+  icon: sftp-csv.svg
+  license: MIT
+  name: Sftp Csv
+  releaseDate: TODO
+  releaseStage: alpha
+  supportLevel: community
+  documentationUrl: https://docs.airbyte.com/integrations/destinations/sftp-csv
+  tags:
+    - language:python
+metadataSpecVersion: "1.0"
