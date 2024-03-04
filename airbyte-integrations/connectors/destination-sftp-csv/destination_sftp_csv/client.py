@@ -98,15 +98,6 @@ class SftpClient:
         text = json.dumps(record)
         self._files[stream].write(f"{text}\n")
 
-    def read_data(self, stream: str) -> List[Dict]:
-        with self._open(stream) as file:
-            pos = file.tell()
-            file.seek(0)
-            lines = file.readlines()
-            file.seek(pos)
-            data = [json.loads(line.strip()) for line in lines]
-        return data
-
     def delete(self, stream: str) -> None:
         with sftp_client(self.host, self.port, self.username, self.password) as sftp:
             try:
