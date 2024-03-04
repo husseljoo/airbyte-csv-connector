@@ -54,6 +54,7 @@ class SftpClient:
         self._items_order: Dict[str, list] = {}
 
     def __enter__(self):
+        self.file_name = self.file_name[:-4] if self.file_name.lower().endswith(".csv") else self.file_name
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
