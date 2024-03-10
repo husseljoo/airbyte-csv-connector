@@ -32,7 +32,7 @@ class HdfsClient:
         self.client = PyWebHdfsClient(host=host, port=str(port))
         self._items_order = []
         self.header_offset = 0
-        self.fields = 0
+        self.header_fields = ""
 
     # def clear_file(self):
     #     print("Clearing file...")
@@ -86,9 +86,9 @@ class HdfsClient:
                 self.destination_path, offset=0, length=length
             ).decode("utf-8")
             length *= 2
+        self.header_fields = header
         header = header.split("\n")[0]
-        self.header_offset = len(bytes(header)) + 1
-        self.fields = len(header.split(","))
+        self.header_offset = len(bytes(header, "utf-8")) + 1
         return header
 
     def flush(self):
@@ -101,20 +101,26 @@ class HdfsClient:
         self.write_buffer.clear()
 
     def extract(self):
+        if not self.header_fields:
+            self.header_fields = self.read_catalog()
+
         return Records(
             self.client,
             destination_path=self.destination_path,
             header_offset=self.header_offset,
-            fields=self.fields,
+            header_fields=self.header_fields,
         )
 
 
 class Records:
-    def __init__(self, client, destination_path, header_offset, fields):
+    def __init__(self, client, destination_path, header_offset, header_fields):
         self._client = client
         self.destination_path = destination_path
         self._header_offset = header_offset
-        self._fields = fields
+        self._header_fields = header_fields
+
+    def generate_data_dict(self, data):
+        return dict(zip(self._header_fields.split(","), data))
 
     def __iter__(self):
         def _gen2():
@@ -134,11 +140,12 @@ class Records:
             csv_reader = csv.reader(io.StringIO(decoded_line), delimiter=",")
             bool = False
             for row in csv_reader:
-                print(type(row))
+                print(f"row: {row}")
+                print(f"headers: {self._header_fields}")
                 if not bool:
                     bool = True
                     continue
-                yield row
+                yield self.generate_data_dict(row)
 
         def _gen():
             records = self._client.fetch_records()
