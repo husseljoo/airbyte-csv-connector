@@ -1,0 +1,23 @@
+documentationUrl: https://docsurl.com
+connectionSpecification:
+  $schema: http://json-schema.org/draft-07/schema#
+  title: Hdfs Spec
+  type: object
+  required:
+    - host
+    - port
+    - destination_path
+  properties:
+    format:
+      type: string
+      description: format of file to read from
+      default: csv
+    host:
+      type: string
+      description: host of HDFS namenode
+    port:
+      type: integer
+      description: Port of HDFS namenode
+    destination_path:
+      type: string
+      description: Path of HDFS file to read from.
