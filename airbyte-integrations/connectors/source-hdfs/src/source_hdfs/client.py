@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-import sys
+import csv
+import io
 from typing import Dict
 from pywebhdfs.webhdfs import PyWebHdfsClient
 
@@ -20,6 +21,7 @@ class HdfsClient:
     read messages with a particular prefix e.g: name__ab__123, where 123 is the timestamp they last read data from.
     """
 
+    CHUNK_SIZE = 5000
     write_buffer = []
     flush_interval = 1000
 
@@ -29,6 +31,8 @@ class HdfsClient:
         self.destination_path = destination_path
         self.client = PyWebHdfsClient(host=host, port=str(port))
         self._items_order = []
+        self.header_offset = 0
+        self.fields = 0
 
     # def clear_file(self):
     #     print("Clearing file...")
@@ -83,6 +87,8 @@ class HdfsClient:
             ).decode("utf-8")
             length *= 2
         header = header.split("\n")[0]
+        self.header_offset = len(bytes(header)) + 1
+        self.fields = len(header.split(","))
         return header
 
     def flush(self):
@@ -94,13 +100,75 @@ class HdfsClient:
         print(f"arr: {arr}")
         self.write_buffer.clear()
 
-    # def delete_stream_entries(self, stream_name: str):
-    #     """Deletes all the records belonging to the input stream"""
-    #     keys_to_delete = []
-    #     for key in self.client.list_keys(prefix=f"{stream_name}__ab__"):
-    #         keys_to_delete.append(key)
-    #         if len(keys_to_delete) == self.flush_interval:
-    #             self.client.delete(keys_to_delete)
-    #             keys_to_delete.clear()
-    #     if len(keys_to_delete) > 0:
-    #         self.client.delete(keys_to_delete)
+    def extract(self):
+        return Records(
+            self.client,
+            destination_path=self.destination_path,
+            header_offset=self.header_offset,
+            fields=self.fields,
+        )
+
+
+class Records:
+    def __init__(self, client, destination_path, header_offset, fields):
+        self._client = client
+        self.destination_path = destination_path
+        self._header_offset = header_offset
+        self._fields = fields
+
+    def __iter__(self):
+        def _gen2():
+            # offset = self._header_offset
+            # decoded_line = self.client.read_file(
+            #     self.destination_path, offset=offset, length=CHUNK_SIZE
+            # ).decode("utf-8")
+            # csv_reader = csv.reader(io.StringIO(decoded_line), delimiter=",")
+
+            # I have to parse the line and make it only consist of correct lines (without trailing partial strings )
+            # offset += CHUNK_SIZE  # CHUNK_SIZE will differ
+
+            offset = self._header_offset
+            decoded_line = self._client.read_file(
+                self.destination_path, offset=offset
+            ).decode("utf-8")
+            csv_reader = csv.reader(io.StringIO(decoded_line), delimiter=",")
+            bool = False
+            for row in csv_reader:
+                print(type(row))
+                if not bool:
+                    bool = True
+                    continue
+                yield row
+
+        def _gen():
+            records = self._client.fetch_records()
+            if records is None or len(records) == 0:
+                return
+
+            for k, v in records.items():
+                last_key = k
+                data = {"key": k, "value": json.dumps(v)}
+
+                yield data
+
+            # fetch data start at last_key inclusive
+            while records := self._client.fetch_records(last_key):
+                num_records = len(records)
+
+                records_iter = iter(records.items())
+                first_key, first_value = next(records_iter)
+                if first_key == last_key:
+                    if num_records == 1:
+                        return
+                else:
+                    last_key = first_key
+                    data = {"key": first_key, "value": json.dumps(first_value)}
+                    yield data
+
+                for k, v in records_iter:
+                    last_key = k
+                    data = {"key": k, "value": json.dumps(v)}
+
+                    yield data
+
+        return _gen2()

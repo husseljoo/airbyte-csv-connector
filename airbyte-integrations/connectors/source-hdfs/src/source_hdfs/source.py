@@ -116,16 +116,24 @@ class SourceHdfs(Source):
 
         :return: A generator that produces a stream of AirbyteRecordMessage contained in AirbyteMessage object.
         """
+        stream = catalog.streams[0].stream
+        stream_name = stream.name
+
+        # set default values later
+        host = str(config.get("host"))
+        port = int(str(config.get("port")))  # will remove this shit later
+        destination_path = str(config.get("destination_path"))
+
+        client = HdfsClient(host, port, destination_path)
+
         stream_name = "TableName"  # Example
-        data = {"columnName": "Hello World"}  # Example
-
-        # Not Implemented
-
-        yield AirbyteMessage(
-            type=Type.RECORD,
-            record=AirbyteRecordMessage(
-                stream=stream_name,
-                data=data,
-                emitted_at=int(datetime.now().timestamp()) * 1000,
-            ),
-        )
+        for data in client.extract():
+            print(data)
+            yield AirbyteMessage(
+                type=Type.RECORD,
+                record=AirbyteRecordMessage(
+                    stream=stream_name,
+                    data=data,
+                    emitted_at=int(datetime.now().timestamp()) * 1000,
+                ),
+            )

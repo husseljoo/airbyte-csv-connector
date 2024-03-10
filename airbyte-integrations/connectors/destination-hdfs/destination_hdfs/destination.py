@@ -79,6 +79,8 @@ class DestinationHdfs(Destination):
             if message.type == Type.STATE:
                 # Emitting a state message indicates that all records which came before it have been written to the destination. So we flush
                 # the queue to ensure writes happen, then output the state message to indicate it's safe to checkpoint state
+                buffer_size = writer.get_buffer_size()
+                print(f"write_buffer_size is : {buffer_size}")
                 writer.flush()
                 yield message
             elif message.type == Type.RECORD:
