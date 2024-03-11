@@ -8,18 +8,20 @@ from datetime import datetime
 from typing import Dict, Generator
 
 from airbyte_cdk.logger import AirbyteLogger
-from airbyte_cdk.models import (
+from airbyte_cdk.models.airbyte_protocol import (
     AirbyteCatalog,
     AirbyteConnectionStatus,
     AirbyteMessage,
     AirbyteRecordMessage,
     AirbyteStream,
     ConfiguredAirbyteCatalog,
+    AirbyteStreamStatus,
     Status,
     Type,
 )
 from airbyte_cdk.sources import Source
 from source_hdfs.client import HdfsClient
+from airbyte_cdk.utils.stream_status_utils import as_airbyte_message
 
 
 class SourceHdfs(Source):
@@ -127,8 +129,9 @@ class SourceHdfs(Source):
         client = HdfsClient(host, port, destination_path)
 
         stream_name = "TableName"  # Example
+        yield as_airbyte_message(stream, AirbyteStreamStatus.RUNNING)
         for data in client.extract():
-            print(data)
+            # print(data)
             yield AirbyteMessage(
                 type=Type.RECORD,
                 record=AirbyteRecordMessage(
@@ -137,3 +140,4 @@ class SourceHdfs(Source):
                     emitted_at=int(datetime.now().timestamp()) * 1000,
                 ),
             )
+        yield as_airbyte_message(stream, AirbyteStreamStatus.COMPLETE)
