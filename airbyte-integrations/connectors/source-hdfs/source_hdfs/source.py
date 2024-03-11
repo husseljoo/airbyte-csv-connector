@@ -26,6 +26,13 @@ from airbyte_cdk.utils.stream_status_utils import as_airbyte_message
 
 
 class SourceHdfs(Source):
+    def parse_config(self, config: json):
+        return (
+            str(config.get("host")),
+            int(str(config.get("port"))),
+            str(config.get("destination_path")),
+        )
+
     def check(self, logger: AirbyteLogger, config: json) -> AirbyteConnectionStatus:
         """
         Tests if the input configuration can be used to successfully connect to the integration
@@ -39,9 +46,7 @@ class SourceHdfs(Source):
         :return: AirbyteConnectionStatus indicating a Success or Failure
         """
         try:
-            host = str(config.get("host"))
-            port = int(str(config.get("port")))  # will remove this shit later
-            destination_path = str(config.get("destination_path"))
+            host, port, destination_path = self.parse_config(config)
             client = HdfsClient(host, port, destination_path)
             if not client.check_status():
                 return AirbyteConnectionStatus(status=Status.FAILED)
@@ -68,9 +73,7 @@ class SourceHdfs(Source):
             - json_schema providing the specifications of expected schema for this stream (a list of columns described
             by their names and types)
         """
-        host = str(config.get("host"))
-        port = int(str(config.get("port")))  # will remove this shit later
-        destination_path = str(config.get("destination_path"))
+        host, port, destination_path = self.parse_config(config)
 
         reader = HdfsClient(host, port, destination_path)
         header = reader.read_catalog()
@@ -124,20 +127,15 @@ class SourceHdfs(Source):
 
         :return: A generator that produces a stream of AirbyteRecordMessage contained in AirbyteMessage object.
         """
+        host, port, destination_path = self.parse_config(config)
+
         stream = catalog.streams[0].stream
         stream_name = stream.name
-
-        # set default values later
-        host = str(config.get("host"))
-        port = int(str(config.get("port")))  # will remove this shit later
-        destination_path = str(config.get("destination_path"))
-
         client = HdfsClient(host, port, destination_path)
 
         stream_name = os.path.splitext(os.path.basename(destination_path))[0]
         yield as_airbyte_message(stream, AirbyteStreamStatus.RUNNING)
         for data in client.extract():
-            # print(data)
             yield AirbyteMessage(
                 type=Type.RECORD,
                 record=AirbyteRecordMessage(
