@@ -4,6 +4,7 @@
 
 
 import json
+import os
 from datetime import datetime
 from typing import Dict, Generator
 
@@ -63,7 +64,6 @@ class SourceHdfs(Source):
             - json_schema providing the specifications of expected schema for this stream (a list of columns described
             by their names and types)
         """
-        print(config)
         host = str(config.get("host"))
         port = int(str(config.get("port")))  # will remove this shit later
         destination_path = str(config.get("destination_path"))
@@ -82,9 +82,11 @@ class SourceHdfs(Source):
         }
 
         streams = []
+        stream_name = os.path.splitext(os.path.basename(destination_path))[0]
+
         streams.append(
             AirbyteStream(
-                name="some-name",
+                name=stream_name,
                 json_schema=json_schema,
                 supported_sync_modes=["full_refresh"],
             )
@@ -128,7 +130,7 @@ class SourceHdfs(Source):
 
         client = HdfsClient(host, port, destination_path)
 
-        stream_name = "TableName"  # Example
+        stream_name = os.path.splitext(os.path.basename(destination_path))[0]
         yield as_airbyte_message(stream, AirbyteStreamStatus.RUNNING)
         for data in client.extract():
             # print(data)
