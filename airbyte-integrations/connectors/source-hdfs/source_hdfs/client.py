@@ -26,6 +26,12 @@ class HdfsClient:
         self.header_offset = 0
         self.header_fields = ""
 
+    def check_status(self):
+        status = self.client.get_file_dir_status(self.destination_path)
+        if "FileStatus" not in status:
+            return False
+        return True
+
     def read_catalog(self):
         length = 200
         header = ""

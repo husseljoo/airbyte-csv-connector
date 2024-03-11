@@ -39,8 +39,12 @@ class SourceHdfs(Source):
         :return: AirbyteConnectionStatus indicating a Success or Failure
         """
         try:
-            # Not Implemented
-
+            host = str(config.get("host"))
+            port = int(str(config.get("port")))  # will remove this shit later
+            destination_path = str(config.get("destination_path"))
+            client = HdfsClient(host, port, destination_path)
+            if not client.check_status():
+                return AirbyteConnectionStatus(status=Status.FAILED)
             return AirbyteConnectionStatus(status=Status.SUCCEEDED)
         except Exception as e:
             return AirbyteConnectionStatus(
