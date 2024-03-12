@@ -6,7 +6,7 @@ connectionSpecification:
   required:
     - host
     - port
-    - destination_path
+    - source_path
   properties:
     format:
       type: string
@@ -18,6 +18,6 @@ connectionSpecification:
     port:
       type: integer
       description: Port of HDFS namenode
-    destination_path:
+    source_path:
       type: string
       description: Path of HDFS file to read from.

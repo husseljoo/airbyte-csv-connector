@@ -17,17 +17,17 @@ class HdfsClient:
 
     CHUNK_SIZE = 5000
 
-    def __init__(self, host: str, port: int, destination_path: str):
+    def __init__(self, host: str, port: int, source_path: str):
         self.host = host
         self.port = port
-        self.destination_path = destination_path
+        self.source_path = source_path
         self.client = PyWebHdfsClient(host=host, port=str(port))
         self._items_order = []
         self.header_offset = 0
         self.header_fields = ""
 
     def check_status(self):
-        status = self.client.get_file_dir_status(self.destination_path)
+        status = self.client.get_file_dir_status(self.source_path)
         if "FileStatus" not in status:
             return False
         return True
@@ -38,7 +38,7 @@ class HdfsClient:
 
         while "\n" not in header:
             header = self.client.read_file(
-                self.destination_path, offset=0, length=length
+                self.source_path, offset=0, length=length
             ).decode("utf-8")
             length *= 2
         self.header_fields = header
@@ -52,16 +52,16 @@ class HdfsClient:
 
         return Records(
             self.client,
-            destination_path=self.destination_path,
+            source_path=self.source_path,
             header_offset=self.header_offset,
             header_fields=self.header_fields,
         )
 
 
 class Records:
-    def __init__(self, client, destination_path, header_offset, header_fields):
+    def __init__(self, client, source_path, header_offset, header_fields):
         self._client = client
-        self.destination_path = destination_path
+        self.source_path = source_path
         self._header_offset = header_offset
         self._header_fields = header_fields
 
@@ -72,7 +72,7 @@ class Records:
         def _gen():
             offset = self._header_offset
             decoded_line = self._client.read_file(
-                self.destination_path, offset=offset
+                self.source_path, offset=offset
             ).decode("utf-8")
             csv_reader = csv.reader(io.StringIO(decoded_line), delimiter=",")
             for row in csv_reader:
