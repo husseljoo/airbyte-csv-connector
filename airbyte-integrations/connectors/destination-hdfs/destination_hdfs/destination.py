@@ -16,6 +16,15 @@ from destination_hdfs.client import HdfsClient
 
 
 class DestinationHdfs(Destination):
+    def parse_config(self, config):
+        return (
+            str(config.get("host")),
+            int(str(config.get("port"))),
+            str(config.get("username")),
+            str(config.get("destination_path")),
+            int(config.get("flush_interval")),
+        )
+
     def write(
         self, config: Mapping[str, Any], configured_catalog: ConfiguredAirbyteCatalog, input_messages: Iterable[AirbyteMessage]
     ) -> Iterable[AirbyteMessage]:
@@ -34,27 +43,8 @@ class DestinationHdfs(Destination):
         :param input_messages: The stream of input messages received from the source
         :return: Iterable of AirbyteStateMessages wrapped in AirbyteMessage structs
         """
-        # # SOME LOGIC TO DELETE FILE IF OVERWRITE
-        # for configured_stream in configured_catalog.streams:
-        #     if configured_stream.destination_sync_mode == DestinationSyncMode.overwrite:
-        #         hdfs.delete(......)
-
-        # if file exists in hdfs and overerite:
-        #     delete file and create again then append
-        # if file exists and incremental:
-        #     append from increment
-        # if file does not exists and (overwrite or incremental):
-        #     create then append
-
-        # hdfs.create_file(destination_path, "")
-
         streams = {s.stream.name for s in configured_catalog.streams}
-        # logger.info(f"Starting write to HDFS with {len(streams)} streams")
-
-        host = str(config.get("host"))
-        port = int(str(config.get("port")))  # will remove this shit later
-        username = str(config.get("username"))
-        destination_path = str(config.get("destination_path"))
+        host, port, username, destination_path, flush_interval = self.parse_config(config)
 
         print(host, port, username, destination_path)
 
@@ -62,17 +52,8 @@ class DestinationHdfs(Destination):
         properties = configured_stream.stream.json_schema["properties"].keys()
         csv_header = ",".join(properties)
         stream_name = configured_stream.stream.name
-        print(stream_name)
-        print(properties)
-        print(csv_header)
+        writer = HdfsClient(host, port, username, destination_path, flush_interval)
 
-        writer = HdfsClient(host, port, username, destination_path)
-
-        # if configured_stream.destination_sync_mode == DestinationSyncMode.overwrite:
-        #     writer.clear_file()
-        #     writer.write_csv_header(stream_name, csv_header)
-
-        # writer.clear_file()
         writer.write_csv_header(stream_name, csv_header)
 
         for message in input_messages:

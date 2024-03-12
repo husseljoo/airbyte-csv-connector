@@ -6,7 +6,14 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "Destination Hdfs",
     "type": "object",
-    "required": ["format", "host", "username", "port", "destination_path"],
+    "required": [
+      "format",
+      "host",
+      "username",
+      "port",
+      "destination_path",
+      "flush_interval"
+    ],
     "additionalProperties": false,
     "properties": {
       "format": {
@@ -44,6 +51,13 @@
         "description": "Path to the HDFS directory where the file will be written.",
         "examples": ["/csv_data"],
         "order": 3
+      },
+      "flush_interval": {
+        "title": "Flush interval",
+        "type": "integer",
+        "default": "1000",
+        "description": "The number of records after which a flush/append to file will occur.",
+        "order": 4
       }
     }
   }

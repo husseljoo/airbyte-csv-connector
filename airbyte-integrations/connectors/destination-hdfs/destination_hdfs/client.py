@@ -21,23 +21,20 @@ class HdfsClient:
     """
 
     write_buffer = []
-    flush_interval = 1000
+    flush_interval = 500
 
-    def __init__(self, host: str, port: int, username: str, destination_path: str):
+    def __init__(self, host: str, port: int, username: str, destination_path: str, flush_interval: int):
         self.host = host
         self.port = port
         self.username = username
         self.destination_path = destination_path
         self.client = PyWebHdfsClient(host=host, port=str(port), user_name=username)
         self._items_order = []
+        if flush_interval:
+            self.flush_interval = flush_interval
 
     def get_buffer_size(self):
         return len(self.write_buffer)
-
-    # def clear_file(self):
-    #     print("Clearing file...")
-    #     arr = self.client.create_file(self.destination_path, "")
-    #     print(f"arr: {arr}")
 
     def write_csv_header(self, stream_name: str, header: str):
         # print("Deleting file ...")
@@ -61,36 +58,13 @@ class HdfsClient:
 
     def queue_write_operation(self, stream_name: str, record: Dict):
         line = self._record_to_csv(record)  # in csv format
-        # print(f"arr: {line}")
         self.write_buffer.append(line)
-        # if len(self.write_buffer) == self.flush_interval:
-        #     print("Flush remaining data in buffer.")
-        #     self.flush()
-
-    # def batch_write(self, stream_name: str, record: Dict):
-    #     # pywebhdfs shit
-    #     # stream name seems irrelevant as I only see solution for one stream
-    #     # kv_pair = (f"{stream_name}__ab__{written_at}", record)
-    #     self.write_buffer.append(record)
-    #     if len(self.write_buffer) == self.flush_interval:
-    #         self.flush()
+        if len(self.write_buffer) > self.flush_interval:
+            self.flush()
 
     def flush(self):
         data = "\n".join(self.write_buffer)
-        # buffer_size = sys.getsizeof(data) + 400
-        # print(f"buffer_size: {buffer_size}")
-        # arr = self.client.append_file(self.destination_path, data, buffersize=buffer_size)
+        print("Flushing now")
+        # print("Flushing interval: ", self.flush_interval)
         arr = self.client.append_file(self.destination_path, data)
-        print(f"arr: {arr}")
         self.write_buffer.clear()
-
-    # def delete_stream_entries(self, stream_name: str):
-    #     """Deletes all the records belonging to the input stream"""
-    #     keys_to_delete = []
-    #     for key in self.client.list_keys(prefix=f"{stream_name}__ab__"):
-    #         keys_to_delete.append(key)
-    #         if len(keys_to_delete) == self.flush_interval:
-    #             self.client.delete(keys_to_delete)
-    #             keys_to_delete.clear()
-    #     if len(keys_to_delete) > 0:
-    #         self.client.delete(keys_to_delete)
