@@ -47,7 +47,7 @@ class SourceOrangeFiles(Source):
         :return: AirbyteConnectionStatus indicating a Success or Failure
         """
         try:
-            host, port, username, password, path = self.parse_config(config)
+            host, port, username, password, _ = self.parse_config(config)
 
             with paramiko.Transport((host, port)) as source_transport:
                 source_transport.connect(username=username, password=password)
@@ -127,12 +127,19 @@ class SourceOrangeFiles(Source):
         """
         stream_name = "StreamName"
 
+        host, port, username, password, path = self.parse_config(config)
+        # I think this is better to decouple source and destination (the source can easily change servers,direcories etc. without affecting the destinaton)
+        data = {
+            "host": host,
+            "port": port,
+            "username": username,
+            "password": password,
+            "path": path,
+        }
         sftp_client = SftpClient(config)
         for file in sftp_client.read_files():
-            data = {
-                "id": f"{file.filename}_{file.st_mtime}",
-                "file_name": file.filename,
-            }
+            data["id"] = f"{file.filename}_{file.st_mtime}"
+            data["file_name"] = file.filename
             yield AirbyteMessage(
                 type=Type.RECORD,
                 record=AirbyteRecordMessage(
