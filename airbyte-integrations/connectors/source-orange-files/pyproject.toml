@@ -17,6 +17,7 @@ packages = [ { include = "source_orange_files"}, {include = "main.py"} ]
 [tool.poetry.dependencies]
 python = "^3.9,<3.12"
 airbyte-cdk = "^0"
+paramiko = "3.4.0"
 
 [tool.poetry.scripts]
 source-orange-files = "source_orange_files.run:run"
