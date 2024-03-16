@@ -9,17 +9,21 @@ connectionSpecification:
     - username
     - password
     - path
-
   properties:
     host:
       type: string
-    port:
-      type: integer
-      default: 22
+      order: 1
     username:
       type: string
+      order: 2
     password:
       type: string
       airbyte_secret: true
+      order: 3
     path:
       type: string
+      order: 5
+    port:
+      type: integer
+      default: 22
+      order: 4

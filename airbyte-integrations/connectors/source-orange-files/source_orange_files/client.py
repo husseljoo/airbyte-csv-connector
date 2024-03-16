@@ -16,7 +16,7 @@ class SftpClient:
         source_transport.connect(username=self.username, password=self.password)
         return paramiko.SFTPClient.from_transport(source_transport)
 
-    def read_files(self, path: str = None):
+    def list_files(self, path: str = None):
         path_to_use = path if path else self.path
         with self.connect() as source_sftp:
             return source_sftp.listdir_attr(path_to_use)

@@ -9,15 +9,20 @@ from datetime import datetime
 from typing import Dict, Generator
 
 from airbyte_cdk.logger import AirbyteLogger
-from airbyte_cdk.models import (
+from airbyte_cdk.models.airbyte_protocol import (
     AirbyteCatalog,
     AirbyteConnectionStatus,
     AirbyteMessage,
     AirbyteRecordMessage,
+    AirbyteStateMessage,
     AirbyteStream,
     ConfiguredAirbyteCatalog,
     Status,
     Type,
+    AirbyteStateType,
+    AirbyteStreamState,
+    StreamDescriptor,
+    AirbyteStateBlob,
 )
 from airbyte_cdk.sources import Source
 from source_orange_files.client import SftpClient
@@ -25,7 +30,7 @@ from source_orange_files.client import SftpClient
 
 class SourceOrangeFiles(Source):
 
-    def parse_config(self, config: json):
+    def parse_config(self, config):
         return (
             str(config.get("host")),
             int(str(config.get("port"))),
@@ -81,11 +86,12 @@ class SourceOrangeFiles(Source):
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
             "properties": {
-                "id": {"type": "string"},
+                "modification_time": {"type": "integer"},
                 "file_name": {"type": "string"},
             },
         }
-        default_cursor_field = ["id"]
+        default_cursor_field = ["modification_time"]
+        source_defined_primary_key = [["file_name"]]
         supported_sync_modes = ["full_refresh", "incremental"]
 
         streams.append(
@@ -93,6 +99,7 @@ class SourceOrangeFiles(Source):
                 name=stream_name,
                 json_schema=json_schema,
                 source_defined_cursor=True,
+                source_defined_primary_key=source_defined_primary_key,
                 default_cursor_field=default_cursor_field,
                 supported_sync_modes=supported_sync_modes,
             )
@@ -126,20 +133,49 @@ class SourceOrangeFiles(Source):
         :return: A generator that produces a stream of AirbyteRecordMessage contained in AirbyteMessage object.
         """
         stream_name = "StreamName"
+        stream = None
+
+        print("STATE is:")
+        print(state)
+        print("\n\n\n\n\n\n\n")
+
+        for configured_stream in catalog.streams:
+            print("\n\nconfigured_stream:")
+            print(configured_stream)
+            print("\n\n")
+            stream = configured_stream.stream
+            stream_name = configured_stream.stream.name
+
+        # In case of incremental sync, state should contain the last date when we fetched stock prices
+        prev_latest_mod_time = 0
+        if "incremental" in stream.supported_sync_modes:
+            if (
+                state
+                and stream_name in state
+                and state[stream_name].get("modification_time")
+            ):
+                prev_latest_mod_time = state.stream_state[stream_name].get(
+                    "modification_time"
+                )
 
         host, port, username, password, path = self.parse_config(config)
         # I think this is better to decouple source and destination (the source can easily change servers,direcories etc. without affecting the destinaton)
-        data = {
-            "host": host,
-            "port": port,
-            "username": username,
-            "password": password,
-            "path": path,
-        }
+        # data = {
+        #     "host": host,
+        #     "port": port,
+        #     "username": username,
+        #     "password": password,
+        #     "path": path,
+        # }
+        latest_mod_time = prev_latest_mod_time
+        data = {}
         sftp_client = SftpClient(config)
-        for file in sftp_client.read_files():
-            data["id"] = f"{file.filename}_{file.st_mtime}"
+        for file in sftp_client.list_files():
+            if file.st_mtime <= prev_latest_mod_time:
+                continue
+            data["modification_time"] = file.st_mtime
             data["file_name"] = file.filename
+            latest_mod_time = max(latest_mod_time, file.st_mtime)
             yield AirbyteMessage(
                 type=Type.RECORD,
                 record=AirbyteRecordMessage(
@@ -148,3 +184,21 @@ class SourceOrangeFiles(Source):
                     emitted_at=int(datetime.now().timestamp()) * 1000,
                 ),
             )
+
+        # Emit new state message.
+        # print(stream)
+
+        #         if sync_mode == "incremental":
+        data = {stream_name: {"modification_time": latest_mod_time}}
+        print("ZZZZZ")
+        print(data)
+        print("ZZZZZ")
+
+        stream_state = AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name=stream_name),
+                stream_state=AirbyteStateBlob.parse_obj(data),
+            ),
+        )
+        yield AirbyteMessage(type=Type.STATE, state=stream_state)
