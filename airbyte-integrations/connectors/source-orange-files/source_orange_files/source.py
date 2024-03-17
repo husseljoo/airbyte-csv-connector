@@ -146,17 +146,24 @@ class SourceOrangeFiles(Source):
             stream = configured_stream.stream
             stream_name = configured_stream.stream.name
 
-        # In case of incremental sync, state should contain the last date when we fetched stock prices
         prev_latest_mod_time = 0
-        if "incremental" in stream.supported_sync_modes:
-            if (
-                state
-                and stream_name in state
-                and state[stream_name].get("modification_time")
-            ):
-                prev_latest_mod_time = state.stream_state[stream_name].get(
-                    "modification_time"
-                )
+        if state:
+            stream_state = (
+                state.get("stream", {}).get("stream_state", {}).get(stream_name)
+            )
+            prev_latest_mod_time = stream_state.get("modification_time")
+
+        # # In case of incremental sync, state should contain the last date when we fetched stock prices
+        # prev_latest_mod_time = 0
+        # if "incremental" in stream.supported_sync_modes:
+        #     if (
+        #         state
+        #         and stream_name in state
+        #         and state[stream_name].get("modification_time")
+        #     ):
+        #         prev_latest_mod_time = state.stream_state[stream_name].get(
+        #             "modification_time"
+        #         )
 
         host, port, username, password, path = self.parse_config(config)
         # I think this is better to decouple source and destination (the source can easily change servers,direcories etc. without affecting the destinaton)
@@ -170,7 +177,7 @@ class SourceOrangeFiles(Source):
         latest_mod_time = prev_latest_mod_time
         data = {}
         sftp_client = SftpClient(config)
-        for file in sftp_client.list_files():
+        for file in sftp_client.list_files(target_time=1710588487):
             if file.st_mtime <= prev_latest_mod_time:
                 continue
             data["modification_time"] = file.st_mtime
