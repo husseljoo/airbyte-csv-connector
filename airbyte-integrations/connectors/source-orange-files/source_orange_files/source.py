@@ -148,10 +148,18 @@ class SourceOrangeFiles(Source):
 
         prev_latest_mod_time = 0
         if state:
-            stream_state = (
-                state.get("stream", {}).get("stream_state", {}).get(stream_name)
-            )
-            prev_latest_mod_time = stream_state.get("modification_time")
+            print(type(state))
+            state_message = state[0]
+            print(state_message.stream)
+            print(state_message.stream.stream_descriptor)
+            print(state_message.stream.stream_state)
+            print(type(state_message.stream.stream_state))
+            state_data = dict(state_message.stream.stream_state)
+            print(f"state_data: {state_data}")
+            state_data_name = state_data.get(stream_name)
+            print(f"state_data_name: {state_data_name}")
+            prev_latest_mod_time = state_data.get(stream_name).get("modification_time")
+            print(f"prev_latest_mod_time: {prev_latest_mod_time}")
 
         # # In case of incremental sync, state should contain the last date when we fetched stock prices
         # prev_latest_mod_time = 0
@@ -196,16 +204,24 @@ class SourceOrangeFiles(Source):
         # print(stream)
 
         #         if sync_mode == "incremental":
-        data = {stream_name: {"modification_time": latest_mod_time}}
+        state_data = {stream_name: {"modification_time": latest_mod_time}}
         print("ZZZZZ")
-        print(data)
+        print(state_data)
         print("ZZZZZ")
 
-        stream_state = AirbyteStateMessage(
-            type=AirbyteStateType.STREAM,
-            stream=AirbyteStreamState(
-                stream_descriptor=StreamDescriptor(name=stream_name),
-                stream_state=AirbyteStateBlob.parse_obj(data),
+        yield AirbyteMessage(
+            type=Type.STATE,
+            state=AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(
+                        name=stream_name, namespace=None
+                    ),
+                    stream_state=AirbyteStateBlob.parse_obj(state_data),
+                ),
             ),
         )
-        yield AirbyteMessage(type=Type.STATE, state=stream_state)
+        arr = AirbyteStateBlob.parse_obj(state_data)
+        print(f"arr: {arr}")
+        x = dict(arr).get(stream_name).get("modification_time")
+        print(f"x: {x}")
