@@ -1,6 +1,7 @@
 # client.py
 import paramiko
 from paramiko.sftp_client import SFTPClient
+import stat
 
 
 class SftpClient:
@@ -26,6 +27,7 @@ class SftpClient:
     ):
         with self.connect() as sftp:
             attrs_list = sftp.listdir_attr(path=path)
+            attrs_list = list(filter(lambda x: not stat.S_ISDIR(x.st_mode), attrs_list))
             attrs_list.sort(key=lambda x: x.st_mtime)
             index = self._binary_search_attrs(attrs_list, target_time)
             sliced_list = attrs_list[index:]
