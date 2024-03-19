@@ -98,7 +98,8 @@ class DestinationOrangeHdfs(Destination):
                     source_sftp.close()
                     print(f"Finished copying file locally in: {local_filepath}")
                     start_time = time.time()
-                    stdin, stdout, stderr = ssh_client.exec_command(f"hadoop dfs -copyFromLocal {file_name} {hdfs_path}")
+                    command = f"docker cp /tmp/airbyte_local/{file_name} namenode:/;docker exec namenode hadoop dfs -copyFromLocal {file_name} {hdfs_path}"
+                    stdin, stdout, stderr = ssh_client.exec_command(command)
                     exit_status = stdout.channel.recv_exit_status()
                     end_time = time.time()
                     execution_time = end_time - start_time
