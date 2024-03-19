@@ -89,6 +89,11 @@ class SourceOrangeFiles(Source):
             "properties": {
                 "modification_time": {"type": "integer"},
                 "file_name": {"type": "string"},
+                "host": {"type": "string"},
+                "port": {"type": "string"},
+                "path": {"type": "string"},
+                "username": {"type": "string"},
+                "password": {"type": "string"},
             },
         }
         default_cursor_field = ["modification_time"]
@@ -145,16 +150,16 @@ class SourceOrangeFiles(Source):
             prev_latest_mod_time = state_data.get(stream_name).get("modification_time")
 
         # I think it can be better to decouple source and destination (the source can easily change servers,direcories etc. without having to alter the destinaton settings, server hosts etc.)
-        # host, port, username, password, path = self.parse_config(config)
-        # data = {
-        #     "host": host,
-        #     "port": port,
-        #     "username": username,
-        #     "password": password,
-        #     "path": path,
-        # }
+        host, port, username, password, path = self.parse_config(config)
+        data = {
+            "host": host,
+            "port": port,
+            "username": username,
+            "password": password,
+            "path": path,
+        }
         latest_mod_time = prev_latest_mod_time
-        data = {}
+        # data = {}
         sftp_client = SftpClient(config)
         for file in sftp_client.list_files(target_time=prev_latest_mod_time):
             data["modification_time"] = file.st_mtime
