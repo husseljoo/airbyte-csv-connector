@@ -146,7 +146,9 @@ class SourceOrangeFiles(Source):
 
         prev_latest_mod_time = 0
         if state and sync_mode == SyncMode.incremental:
-            state_data = dict(state[0].state_message.stream.stream_state)
+            print("\n\n\n\n\n\n\nState is:")
+            print(state)
+            state_data = dict(state[0].stream.stream_state)
             prev_latest_mod_time = state_data.get(stream_name).get("modification_time")
 
         # I think it can be better to decouple source and destination (the source can easily change servers,direcories etc. without having to alter the destinaton settings, server hosts etc.)
