@@ -10,18 +10,29 @@ class ClientAsync:
 
     def __init__(self, hdfs_path):
         self.hdfs_path = hdfs_path
-        self.localmachine_con, self.sftp_con = None, None
+        self.localmachine_con = None, None
+        self.sftp_clients = {}
 
-    async def establish_connections(self):
-        # host1, port1, username1, password1 = "localhost", 22, "husseljo", "husseljo"
+    async def get_sftp_client(self, con_data):
+        host, port, username, password = (
+            con_data["host"],
+            con_data["port"],
+            con_data["username"],
+            con_data["password"],
+        )
+        self.sftp_clients[host] = "in_progress"
+        con = await asyncssh.connect(host, port, username=username, password=password, known_hosts=None)
+        sftp_client = await con.start_sftp_client()
+        self.sftp_clients[host] = sftp_client
+        return sftp_client
+
+    async def establish_localmachine_connection(self):
         host1, port1, username1, password1 = "172.17.0.1", 22, "husseljo", "husseljo"
-        host2, port2, username2, password2 = "192.168.56.107", 22, "root", "husseljo"
         localmachine_con = await asyncssh.connect(host1, port1, username=username1, password=password1, known_hosts=None)
-        server_con = await asyncssh.connect(host2, port2, username=username2, password=password2, known_hosts=None)
-        sftp_con = await server_con.start_sftp_client()
-        return localmachine_con, sftp_con
+        return localmachine_con
 
     async def consumer_write_hdfs(self, queue, id):
+        print("SFTP_CONNECTIONS: ", self.sftp_clients)
         print(f"CONSUMER {id} STARTED")
         while True:
             file_path = await queue.get()
@@ -49,14 +60,28 @@ class ClientAsync:
             print(f"Consumer {id} copied {file_name} HDFS")
             queue.task_done()
 
-    async def producer_copy_locally(self, queue, stream_name, file_name):
+    async def producer_copy_locally(self, queue, stream_name, data):
+        print("SFTP_CONNECTIONS: ", self.sftp_clients)
+        source_host, source_port, source_username, source_password, source_path, file_name = (
+            data["host"],
+            data["port"],
+            data["username"],
+            data["password"],
+            data["path"],
+            data["file_name"],
+        )
         print(f"Starting to produce {file_name}\n\n\n")
         directory_path = os.path.join(self.CONNECTOR_LOCAL_DIR, stream_name)
         if not os.path.exists(directory_path):
             os.makedirs(directory_path)
+        if source_host not in self.sftp_clients:
+            await self.get_sftp_client(data)
+        elif self.sftp_clients[source_host] == "in_progress":
+            await self.wait_for_sftp_client_connection(source_host)
+        remote_file_path = os.path.join(source_path, file_name)
         local_file_path = os.path.join(directory_path, file_name)
-        await self.sftp_con.get(
-            remotepaths=f"/root/sample_data/data1/{file_name}",
+        await self.sftp_clients[source_host].get(
+            remotepaths=remote_file_path,
             localpath=local_file_path,
         )
 
@@ -65,8 +90,13 @@ class ClientAsync:
         await queue.put(f"{stream_name}/{file_name}")
         print(f"producer_task_copying produced {finished_record}")
 
+    async def wait_for_sftp_client_connection(self, host):
+        while self.sftp_clients[host] is "in_progress":
+            await asyncio.sleep(0.4)  # Adjust sleep duration as needed
+        return self.sftp_clients[host]
+
     async def run(self, input_messages):
-        self.localmachine_con, self.sftp_con = await self.establish_connections()
+        self.localmachine_con = await self.establish_localmachine_connection()
         results = []
 
         queue = asyncio.Queue()
@@ -74,36 +104,17 @@ class ClientAsync:
         consumer_tasks = [asyncio.create_task(self.consumer_write_hdfs(queue, i)) for i in range(consumer_num)]
         producer_tasks = []
         for message in input_messages:
-            print(f"message: {message}")
             if message.type == Type.STATE:
                 results.append(message)
                 print("STATE MESSAGE: ", message)
                 continue
             stream_name = message.record.stream
             data = message.record.data
-            source_host, source_port, source_username, source_password, source_path, file_name = (
-                data["host"],
-                data["port"],
-                data["username"],
-                data["password"],
-                data["path"],
-                data["file_name"],
-            )
-            producer_task = asyncio.create_task(self.producer_copy_locally(queue, stream_name, file_name))
+            producer_task = asyncio.create_task(self.producer_copy_locally(queue, stream_name, data))
             producer_tasks.append(producer_task)
-        print("\n\n\n\nGATHERING PRODUCERS.....\n\n\n\n")
         await asyncio.gather(*producer_tasks)
         for _ in range(consumer_num):
             await queue.put("STOP")
-        print("\n\n\n\nGATHERING CONSUMERS.....\n\n\n\n")
         await asyncio.gather(*consumer_tasks)
         print("ALL FINISHED")
         return results
-
-
-def main():
-    print("Wassup Husseljo!")
-
-
-if __name__ == "__main__":
-    main()
