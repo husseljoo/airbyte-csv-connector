@@ -8,8 +8,12 @@ class ClientAsync:
     CONNECTOR_LOCAL_DIR = "/local"
     HOST_LOCAL_DIR = "/tmp/airbyte_local/"
 
-    def __init__(self, hdfs_path):
-        self.hdfs_path = hdfs_path
+    def __init__(self, config):
+        self.hdfs_path = str(config.get("hdfs_path"))
+        self.consumers_number = str(config.get("consumers_number"))
+        self.airbyte_host_username = str(config.get("airbyte_host_username"))
+        self.airbyte_host_password = str(config.get("airbyte_host_password"))
+        self.airbyte_host_port = str(config.get("airbyte_host_port"))
         self.localmachine_con = None, None
         self.sftp_clients = {}
 
@@ -27,8 +31,9 @@ class ClientAsync:
         return sftp_client
 
     async def establish_localmachine_connection(self):
-        host1, port1, username1, password1 = "172.17.0.1", 22, "husseljo", "husseljo"
-        localmachine_con = await asyncssh.connect(host1, port1, username=username1, password=password1, known_hosts=None)
+        localmachine_con = await asyncssh.connect(
+            "172.17.0.1", 22, username=self.airbyte_host_username, password=self.airbyte_host_password, known_hosts=None
+        )
         return localmachine_con
 
     async def consumer_write_hdfs(self, queue, id):
@@ -42,7 +47,8 @@ class ClientAsync:
             file_name = os.path.basename(file_path)
             host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
             connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
-            command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} /python-async-data && docker exec namenode sh -c 'rm {file_name}'"
+            command = f"whoami;hostname -i;cat /home/husseljo/roam_eg/meeting_notes; docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
+            # command = f"hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path}"
             result = await self.localmachine_con.run(command)
             print(f"Consumer {id}, exit_status for {file_name} output:", result.exit_status)
             if result.exit_status == 0 and os.path.exists(connector_file_path):
@@ -84,8 +90,8 @@ class ClientAsync:
         print(f"producer_task_copying produced {finished_record}")
 
     async def wait_for_sftp_client_connection(self, host):
-        while self.sftp_clients[host] is "in_progress":
-            await asyncio.sleep(0.4)  # Adjust sleep duration as needed
+        while self.sftp_clients[host] == "in_progress":
+            await asyncio.sleep(0.1)  # Adjust sleep duration as needed
         return self.sftp_clients[host]
 
     async def run(self, input_messages):

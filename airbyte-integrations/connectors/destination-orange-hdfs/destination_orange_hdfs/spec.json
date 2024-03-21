@@ -6,37 +6,34 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "Destination Orange Hdfs",
     "type": "object",
-    "required": ["servers", "hdfs_path", "parallelism"],
+    "required": ["hdfs_path", "airbyte_host_username", "airbyte_host_password"],
     "additionalProperties": false,
     "properties": {
       "hdfs_path": {
         "type": "string",
+        "order": 0,
         "description": "The path in which the data will be saved in hdfs."
       },
-      "parallelism": {
-        "type": "integer",
-        "default": 1,
-        "description": "Number of concurrent connections."
+      "airbyte_host_username": {
+        "type": "string",
+        "order": 1,
+        "description": "airbyte_host username (used for ssh'ing into host to copyFromLocal into hdfs)"
       },
-      "servers": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "host": {
-              "type": "string",
-              "description": "The host of the server"
-            },
-            "username": {
-              "type": "string"
-            },
-            "password": {
-              "type": "string"
-            }
-          },
-          "required": ["host", "port", "username", "password"]
-        },
-        "description": "A list of servers that are part of the HDFS cluster. These servers will be used as intermediate locations to files from the sources and copyFromLocal to HDFS and clean up the local filesystem after."
+      "airbyte_host_password": {
+        "type": "string",
+        "order": 2,
+        "airbyte_secret": true,
+        "description": "airbyte_host corresponding password"
+      },
+      "airbyte_host_port": {
+        "type": "integer",
+        "default": 22,
+        "description": "password of user in airbyte_host"
+      },
+      "consumers_number": {
+        "type": "integer",
+        "default": 3,
+        "description": "Number of consumers that read from the queue."
       }
     }
   }
