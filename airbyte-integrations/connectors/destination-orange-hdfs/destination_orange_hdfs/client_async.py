@@ -32,7 +32,6 @@ class ClientAsync:
         return localmachine_con
 
     async def consumer_write_hdfs(self, queue, id):
-        print("SFTP_CONNECTIONS: ", self.sftp_clients)
         print(f"CONSUMER {id} STARTED")
         while True:
             file_path = await queue.get()
@@ -42,9 +41,7 @@ class ClientAsync:
                 break
             file_name = os.path.basename(file_path)
             host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
-            print(f"host_file_path: {host_file_path}")
             connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
-            print(f"connector_file_path: {connector_file_path}")
             command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} /python-async-data && docker exec namenode sh -c 'rm {file_name}'"
             result = await self.localmachine_con.run(command)
             print(f"Consumer {id}, exit_status for {file_name} output:", result.exit_status)
@@ -52,16 +49,13 @@ class ClientAsync:
                 os.remove(connector_file_path)
                 print(f"File '{file_path}' removed successfully.")
             else:
-                print("STD_OUTPUTS:")
-                print(result.stdout)
-                print("STD_ERRORS:")
-                print(result.stderr)
+                print("standard output: ", result.stdout)
+                print("standard error: ", result.stderr)
                 raise Exception(f"Error while copying {file_name} to hdfs")
             print(f"Consumer {id} copied {file_name} HDFS")
             queue.task_done()
 
     async def producer_copy_locally(self, queue, stream_name, data):
-        print("SFTP_CONNECTIONS: ", self.sftp_clients)
         source_host, source_port, source_username, source_password, source_path, file_name = (
             data["host"],
             data["port"],
@@ -85,7 +79,6 @@ class ClientAsync:
             localpath=local_file_path,
         )
 
-        print(f"STARTING to produce {file_name}\n")
         finished_record = f"{file_name}-finished"
         await queue.put(f"{stream_name}/{file_name}")
         print(f"producer_task_copying produced {finished_record}")
