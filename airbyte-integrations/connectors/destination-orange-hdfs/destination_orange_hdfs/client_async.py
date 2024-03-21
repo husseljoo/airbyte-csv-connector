@@ -13,10 +13,11 @@ class ClientAsync:
         self.localmachine_con, self.sftp_con = None, None
 
     async def establish_connections(self):
-        host1, port1, username1, password1 = "localhost", 22, "husseljo", "husseljo"
+        # host1, port1, username1, password1 = "localhost", 22, "husseljo", "husseljo"
+        host1, port1, username1, password1 = "172.17.0.1", 22, "husseljo", "husseljo"
         host2, port2, username2, password2 = "192.168.56.107", 22, "root", "husseljo"
-        localmachine_con = await asyncssh.connect(host1, port1, username=username1, password=password1)
-        server_con = await asyncssh.connect(host2, port2, username=username2, password=password2)
+        localmachine_con = await asyncssh.connect(host1, port1, username=username1, password=password1, known_hosts=None)
+        server_con = await asyncssh.connect(host2, port2, username=username2, password=password2, known_hosts=None)
         sftp_con = await server_con.start_sftp_client()
         return localmachine_con, sftp_con
 
@@ -29,30 +30,44 @@ class ClientAsync:
             if file_path == "STOP":
                 break
             file_name = os.path.basename(file_path)
-            command = f"docker cp {file_path} namenode:/;docker exec namenode hadoop dfs -copyFromLocal -f {file_name} /python-async-data"
+            host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
+            print(f"host_file_path: {host_file_path}")
+            connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
+            print(f"connector_file_path: {connector_file_path}")
+            command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} /python-async-data && docker exec namenode sh -c 'rm {file_name}'"
             result = await self.localmachine_con.run(command)
             print(f"Consumer {id}, exit_status for {file_name} output:", result.exit_status)
-            if result.exit_status == 0 and os.path.exists(file_path):
-                os.remove(file_path)
+            if result.exit_status == 0 and os.path.exists(connector_file_path):
+                os.remove(connector_file_path)
                 print(f"File '{file_path}' removed successfully.")
+            else:
+                print("STD_OUTPUTS:")
+                print(result.stdout)
+                print("STD_ERRORS:")
+                print(result.stderr)
+                raise Exception(f"Error while copying {file_name} to hdfs")
             print(f"Consumer {id} copied {file_name} HDFS")
             queue.task_done()
 
-    async def producer_copy_locally(self, queue, file_name):
+    async def producer_copy_locally(self, queue, stream_name, file_name):
         print(f"Starting to produce {file_name}\n\n\n")
+        directory_path = os.path.join(self.CONNECTOR_LOCAL_DIR, stream_name)
+        if not os.path.exists(directory_path):
+            os.makedirs(directory_path)
+        local_file_path = os.path.join(directory_path, file_name)
         await self.sftp_con.get(
             remotepaths=f"/root/sample_data/data1/{file_name}",
-            localpath="/home/husseljo/damn/orange-files/python-stream",
+            localpath=local_file_path,
         )
 
         print(f"STARTING to produce {file_name}\n")
         finished_record = f"{file_name}-finished"
-        file_path = f"/home/husseljo/damn/orange-files/python-stream/{file_name}"
-        await queue.put(file_path)
+        await queue.put(f"{stream_name}/{file_name}")
         print(f"producer_task_copying produced {finished_record}")
 
     async def run(self, input_messages):
         self.localmachine_con, self.sftp_con = await self.establish_connections()
+        results = []
 
         queue = asyncio.Queue()
         consumer_num = 3
@@ -61,7 +76,8 @@ class ClientAsync:
         for message in input_messages:
             print(f"message: {message}")
             if message.type == Type.STATE:
-                print(message)
+                results.append(message)
+                print("STATE MESSAGE: ", message)
                 continue
             stream_name = message.record.stream
             data = message.record.data
@@ -73,7 +89,7 @@ class ClientAsync:
                 data["path"],
                 data["file_name"],
             )
-            producer_task = asyncio.create_task(self.producer_copy_locally(queue, file_name))
+            producer_task = asyncio.create_task(self.producer_copy_locally(queue, stream_name, file_name))
             producer_tasks.append(producer_task)
         print("\n\n\n\nGATHERING PRODUCERS.....\n\n\n\n")
         await asyncio.gather(*producer_tasks)
@@ -82,6 +98,7 @@ class ClientAsync:
         print("\n\n\n\nGATHERING CONSUMERS.....\n\n\n\n")
         await asyncio.gather(*consumer_tasks)
         print("ALL FINISHED")
+        return results
 
 
 def main():

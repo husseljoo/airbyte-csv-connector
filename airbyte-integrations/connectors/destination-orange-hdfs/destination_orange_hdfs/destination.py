@@ -41,10 +41,14 @@ class DestinationOrangeHdfs(Destination):
         :param input_messages: The stream of input messages received from the source
         :return: Iterable of AirbyteStateMessages wrapped in AirbyteMessage structs
         """
+        if not input_messages:
+            print("No input messages")
         hdfs_path = str(config.get("hdfs_path"))
         print(f"hdfs_path: {hdfs_path}")
         client_async = ClientAsync(hdfs_path)
-        asyncio.run(client_async.run(input_messages))
+        results = asyncio.run(client_async.run(input_messages))
+        print(f"results: {results}")
+        return results
 
     def check(self, logger: AirbyteLogger, config: Mapping[str, Any]) -> AirbyteConnectionStatus:
         """
