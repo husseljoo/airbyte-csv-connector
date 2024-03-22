@@ -47,8 +47,8 @@ class ClientAsync:
             file_name = os.path.basename(file_path)
             host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
             connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
-            command = f"whoami;hostname -i;cat /home/husseljo/roam_eg/meeting_notes; docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
-            # command = f"hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path}"
+            # command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
+            command = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {self.hdfs_path}"
             result = await self.localmachine_con.run(command)
             print(f"Consumer {id}, exit_status for {file_name} output:", result.exit_status)
             if result.exit_status == 0 and os.path.exists(connector_file_path):
@@ -94,8 +94,27 @@ class ClientAsync:
             await asyncio.sleep(0.1)  # Adjust sleep duration as needed
         return self.sftp_clients[host]
 
+    async def run_commands_in_host(self, commands):
+        for command in commands:
+            result = await self.localmachine_con.run(command)
+            print(f"FUNCTION Command: {command}, exit_status: {result.exit_status}")
+            print(f"FUNCTION stdout: {result.stdout}")
+            print(f"FUNCTION stderr: {result.stderr}")
+
     async def run(self, input_messages):
         self.localmachine_con = await self.establish_localmachine_connection()
+        commands = [
+            "echo $SHELl",
+            "echo $HADOOP_HOME/bin/hadoop",
+            "ls $HOME",
+            "whoami",
+            "hostname -i",
+            "echo $HADOOP_HOME",
+            "echo $JAVA_HOME",
+            "$HADOOP_HOME/bin/hadoop dfs -ls /airbyte",
+            "$HADOOP_HOME/bin/hadoop dfs -ls /airbyte",
+        ]
+        await self.run_commands_in_host(commands)
         results = []
 
         queue = asyncio.Queue()
