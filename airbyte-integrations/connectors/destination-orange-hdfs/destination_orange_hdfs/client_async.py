@@ -40,7 +40,7 @@ class ClientAsync:
         print(f"CONSUMER {id} STARTED")
         while True:
             file_path = await queue.get()
-            print(f"item: {file_path}")
+            print(f"item in queue: {file_path}")
             # Terminate the consumer when "STOP" is encountered
             if file_path == "STOP":
                 break
@@ -53,12 +53,12 @@ class ClientAsync:
             print(f"Consumer {id}, exit_status for {file_name} output:", result.exit_status)
             if result.exit_status == 0 and os.path.exists(connector_file_path):
                 os.remove(connector_file_path)
-                print(f"File '{file_path}' removed successfully.")
+                print(f"File '{file_path}' cleaned up successfully.")
             else:
                 print("standard output: ", result.stdout)
                 print("standard error: ", result.stderr)
                 raise Exception(f"Error while copying {file_name} to hdfs")
-            print(f"Consumer {id} copied {file_name} HDFS")
+            print(f"Consumer {id} had written {file_name} to HDFS")
             queue.task_done()
 
     async def producer_copy_locally(self, queue, stream_name, data):
@@ -70,7 +70,7 @@ class ClientAsync:
             data["path"],
             data["file_name"],
         )
-        print(f"Starting to produce {file_name}\n\n\n")
+        print(f"Starting to produce {file_name}\n")
         directory_path = os.path.join(self.CONNECTOR_LOCAL_DIR, stream_name)
         if not os.path.exists(directory_path):
             os.makedirs(directory_path)
@@ -85,38 +85,18 @@ class ClientAsync:
             localpath=local_file_path,
         )
 
-        finished_record = f"{file_name}-finished"
         await queue.put(f"{stream_name}/{file_name}")
-        print(f"producer_task_copying produced {finished_record}")
+        print(f"producer has copied {file_name} locally.")
 
     async def wait_for_sftp_client_connection(self, host):
         while self.sftp_clients[host] == "in_progress":
             await asyncio.sleep(0.1)  # Adjust sleep duration as needed
         return self.sftp_clients[host]
 
-    async def run_commands_in_host(self, commands):
-        for command in commands:
-            result = await self.localmachine_con.run(command)
-            print(f"FUNCTION Command: {command}, exit_status: {result.exit_status}")
-            print(f"FUNCTION stdout: {result.stdout}")
-            print(f"FUNCTION stderr: {result.stderr}")
-
     async def run(self, input_messages):
         self.localmachine_con = await self.establish_localmachine_connection()
-        commands = [
-            "echo $SHELl",
-            "echo $HADOOP_HOME/bin/hadoop",
-            "ls $HOME",
-            "whoami",
-            "hostname -i",
-            "echo $HADOOP_HOME",
-            "echo $JAVA_HOME",
-            "$HADOOP_HOME/bin/hadoop dfs -ls /airbyte",
-            "$HADOOP_HOME/bin/hadoop dfs -ls /airbyte",
-        ]
-        await self.run_commands_in_host(commands)
-        results = []
 
+        results = []
         queue = asyncio.Queue()
         consumer_num = 3
         consumer_tasks = [asyncio.create_task(self.consumer_write_hdfs(queue, i)) for i in range(consumer_num)]
