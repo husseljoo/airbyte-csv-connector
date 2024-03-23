@@ -4,10 +4,6 @@
 
 from typing import Any, Iterable, Mapping
 
-import time
-import subprocess
-import paramiko
-import os
 import asyncio
 from airbyte_cdk import AirbyteLogger
 from airbyte_cdk.destinations import Destination

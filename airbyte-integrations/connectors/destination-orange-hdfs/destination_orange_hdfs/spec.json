@@ -6,7 +6,7 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "Destination Orange Hdfs",
     "type": "object",
-    "required": ["hdfs_path", "airbyte_host_username", "airbyte_host_password"],
+    "required": ["hdfs_path"],
     "additionalProperties": false,
     "properties": {
       "hdfs_path": {

@@ -9,12 +9,12 @@ class ClientAsync:
     HOST_LOCAL_DIR = "/tmp/airbyte_local/"
 
     def __init__(self, config):
-        self.hdfs_path = str(config.get("hdfs_path"))
-        self.consumers_number = str(config.get("consumers_number"))
-        self.airbyte_host_username = str(config.get("airbyte_host_username"))
-        self.airbyte_host_password = str(config.get("airbyte_host_password"))
-        self.airbyte_host_port = str(config.get("airbyte_host_port"))
-        self.localmachine_con = None, None
+        self.hdfs_path = config.get("hdfs_path")
+        self.consumers_number = config.get("consumers_number", 3)
+        self.airbyte_host_username = config.get("airbyte_host_username")
+        self.airbyte_host_password = config.get("airbyte_host_password")
+        self.airbyte_host_port = config.get("airbyte_host_port", 22)
+        self.localmachine_con = None
         self.sftp_clients = {}
 
     async def get_sftp_client(self, con_data):
@@ -31,10 +31,19 @@ class ClientAsync:
         return sftp_client
 
     async def establish_localmachine_connection(self):
-        localmachine_con = await asyncssh.connect(
-            "172.17.0.1", 22, username=self.airbyte_host_username, password=self.airbyte_host_password, known_hosts=None
-        )
-        return localmachine_con
+        HOSTNAME = "172.17.0.1"
+        if self.airbyte_host_username and self.airbyte_host_password:
+            print("establishing local machine ssh connection using airbyte_host_username:{airbyte_host_username} and password.")
+            con = await asyncssh.connect(
+                HOSTNAME, 22, username=self.airbyte_host_username, password=self.airbyte_host_password, known_hosts=None
+            )
+            return con
+        private_key = "/local/airbyte-credentials/airbyte_key"
+        USERNAME = "root"
+        USERNAME = "husseljo"
+        print("establishing local machine ssh connection using private key in:{private_key}.")
+        con = await asyncssh.connect(HOSTNAME, 22, username=USERNAME, client_keys=[private_key], known_hosts=None)
+        return con
 
     async def consumer_write_hdfs(self, queue, id):
         print(f"CONSUMER {id} STARTED")
@@ -47,8 +56,8 @@ class ClientAsync:
             file_name = os.path.basename(file_path)
             host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
             connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
-            # command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
-            command = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {self.hdfs_path}"
+            command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
+            # command = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {self.hdfs_path}"
             result = await self.localmachine_con.run(command)
             print(f"Consumer {id}, exit_status for {file_name} output:", result.exit_status)
             if result.exit_status == 0 and os.path.exists(connector_file_path):
@@ -93,13 +102,21 @@ class ClientAsync:
             await asyncio.sleep(0.1)  # Adjust sleep duration as needed
         return self.sftp_clients[host]
 
+    def close_connections(self):
+        if self.localmachine_con:
+            self.localmachine_con.close()
+            print("closed the localmachine_con")
+        if self.sftp_clients:
+            for host, sftp_client in self.sftp_clients.items():
+                sftp_client.exit()
+                print(f"exited sftp client session for host {host}, sftp_client: {sftp_client})")
+
     async def run(self, input_messages):
         self.localmachine_con = await self.establish_localmachine_connection()
 
         results = []
         queue = asyncio.Queue()
-        consumer_num = 3
-        consumer_tasks = [asyncio.create_task(self.consumer_write_hdfs(queue, i)) for i in range(consumer_num)]
+        consumer_tasks = [asyncio.create_task(self.consumer_write_hdfs(queue, i)) for i in range(self.consumers_number)]
         producer_tasks = []
         for message in input_messages:
             if message.type == Type.STATE:
@@ -111,8 +128,9 @@ class ClientAsync:
             producer_task = asyncio.create_task(self.producer_copy_locally(queue, stream_name, data))
             producer_tasks.append(producer_task)
         await asyncio.gather(*producer_tasks)
-        for _ in range(consumer_num):
+        for _ in range(self.consumers_number):
             await queue.put("STOP")
         await asyncio.gather(*consumer_tasks)
         print("ALL FINISHED")
+        self.close_connections()
         return results
