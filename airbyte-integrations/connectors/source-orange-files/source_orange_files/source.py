@@ -27,6 +27,7 @@ from airbyte_cdk.models.airbyte_protocol import (
 )
 from airbyte_cdk.sources import Source
 from source_orange_files.client import SftpClient
+from datetime import datetime
 
 
 class SourceOrangeFiles(Source):
@@ -82,7 +83,10 @@ class SourceOrangeFiles(Source):
         """
         streams = []
 
-        stream_name = "StreamName"
+        host, path = config.get("host"), config.get("path")
+        path, host = path.replace("/", "-"), host.replace(".", "-")
+        stream_name = host + path
+        # stream_name = "StreamName"
         json_schema = {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
@@ -138,6 +142,9 @@ class SourceOrangeFiles(Source):
 
         :return: A generator that produces a stream of AirbyteRecordMessage contained in AirbyteMessage object.
         """
+        print("CONFIG:")
+        print(config)
+        print("\n\n\n\n\n\n\n")
         stream_name, sync_mode = "StreamName", "incremental"
 
         for configured_stream in catalog.streams:
@@ -145,9 +152,11 @@ class SourceOrangeFiles(Source):
             sync_mode = configured_stream.sync_mode
 
         prev_latest_mod_time = 0
-        if state and sync_mode == SyncMode.incremental:
-            print("\n\n\n\n\n\n\nState is:")
-            print(state)
+        start_date = config.get("start_date", None)
+        if not state and start_date:
+            input_date = datetime.strptime(start_date, "%Y-%m-%d")
+            prev_latest_mod_time = input_date.timestamp()
+        elif state and sync_mode == SyncMode.incremental:
             state_data = dict(state[0].stream.stream_state)
             prev_latest_mod_time = state_data.get(stream_name).get("modification_time")
 
@@ -161,9 +170,12 @@ class SourceOrangeFiles(Source):
             "path": path,
         }
         latest_mod_time = prev_latest_mod_time
-        # data = {}
+
+        file_extension = config.get("file_extension", None)
         sftp_client = SftpClient(config)
-        for file in sftp_client.list_files(target_time=prev_latest_mod_time):
+        for file in sftp_client.list_files(
+            target_time=prev_latest_mod_time, file_extension=file_extension
+        ):
             data["modification_time"] = file.st_mtime
             data["file_name"] = file.filename
             latest_mod_time = max(latest_mod_time, file.st_mtime)

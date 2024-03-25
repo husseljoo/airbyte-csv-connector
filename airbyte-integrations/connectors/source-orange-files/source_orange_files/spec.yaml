@@ -27,3 +27,13 @@ connectionSpecification:
       type: integer
       default: 22
       order: 4
+    start_date:
+      type: string
+      title: "start date"
+      description: "The starting date of the first file to be included (typically useful for very first sync)."
+      pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$
+      pattern_descriptor: YYYY-MM-DD
+    file_extension:
+      type: string
+      title: "file extension"
+      description: "The file extension to be included. (do not include the '.')"
