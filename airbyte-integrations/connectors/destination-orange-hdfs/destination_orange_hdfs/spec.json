@@ -32,8 +32,18 @@
       },
       "consumers_number": {
         "type": "integer",
-        "default": 3,
-        "description": "Number of consumers that read from the queue."
+        "default": 5,
+        "description": "Number of consumers that copy files to HDFS at once."
+      },
+      "producers_number": {
+        "type": "integer",
+        "default": 5,
+        "description": "Number of producers that copy files locally at once."
+      },
+      "sftp_max_requests": {
+        "type": "integer",
+        "default": 128,
+        "description": "Maximum number of parallel chunk transfers at once."
       }
     }
   }
