@@ -11,6 +11,7 @@ class ClientAsync:
 
     def __init__(self, config):
         self.hdfs_path = config.get("hdfs_path")
+        self.hdfs_file = config.get("hdfs_file")
         self.consumers_number = config.get("consumers_number", 5)
         self.producers_number = config.get("producers_number", 5)
         self.max_requests = config.get("sftp_max_requests", 128)
@@ -52,7 +53,7 @@ class ClientAsync:
         con = await asyncssh.connect(HOSTNAME, 22, username=USERNAME, client_keys=[private_key], known_hosts=None)
         return con
 
-    def _generate_hdfs_path(self, path, filename=None):
+    def _evaluate_hdfs_dest(self, path, filename=None):
         try:
             vars = self.variables.copy()
             if filename:
@@ -85,7 +86,10 @@ class ClientAsync:
             host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
             connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
             # command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
-            dynamic_hdfs_path = self._generate_hdfs_path(self.hdfs_path, filename=file_name)
+            dynamic_hdfs_path = self._evaluate_hdfs_dest(self.hdfs_path, filename=file_name)
+            if self.hdfs_file:
+                dynamic_hdfs_file = self._evaluate_hdfs_dest(self.hdfs_file, filename=file_name)
+                dynamic_hdfs_path = "{}/{}".format(dynamic_hdfs_path, dynamic_hdfs_file)
             # command = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {self.hdfs_path}"
             command = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {dynamic_hdfs_path}"
             start_time = time.monotonic()

@@ -6,7 +6,7 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "Destination Orange Hdfs",
     "type": "object",
-    "required": ["hdfs_path", "variables"],
+    "required": ["hdfs_path"],
     "additionalProperties": false,
     "properties": {
       "hdfs_path": {
@@ -14,9 +14,16 @@
         "order": 0,
         "description": "The path in which the data will be saved in hdfs."
       },
+      "hdfs_file": {
+        "type": "string",
+        "order": 1,
+        "always_show": true,
+        "description": "The filename which will be written to the hdfs path. (evaluates to filename if left empty)"
+      },
       "variables": {
         "type": "array",
-        "order": 1,
+        "order": 2,
+        "always_show": true,
         "items": {
           "type": "object",
           "required": ["variable_name", "variable_value"],
