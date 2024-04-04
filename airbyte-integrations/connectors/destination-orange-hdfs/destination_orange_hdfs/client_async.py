@@ -19,6 +19,10 @@ class ClientAsync:
         self.airbyte_host_port = config.get("airbyte_host_port", 22)
         self.localmachine_con = None
         self.sftp_clients = {}
+        self.variables = self._get_variable_dict(config.get("variables", []))
+
+    def _get_variable_dict(self, variables):
+        return {var["variable_name"]: var["variable_value"] for var in variables}
 
     async def get_sftp_client(self, con_data):
         host, port, username, password = (
@@ -48,6 +52,26 @@ class ClientAsync:
         con = await asyncssh.connect(HOSTNAME, 22, username=USERNAME, client_keys=[private_key], known_hosts=None)
         return con
 
+    def _generate_hdfs_path(self, path, filename=None):
+        try:
+            vars = self.variables.copy()
+            if filename:
+                vars["filename"] = filename
+
+            def evaluate_string(x):
+                return eval(f'f"{x}"', {}, vars)
+
+            while True:
+                evaluated_string = evaluate_string(path)
+                if evaluated_string == path:
+                    break
+                path = evaluated_string
+
+            return path
+
+        except Exception as e:
+            raise ValueError(f"Error evaluating string: {e}")
+
     async def consumer_write_hdfs(self, queue, id):
         print(f"CONSUMER {id} STARTED")
         while True:
@@ -61,7 +85,9 @@ class ClientAsync:
             host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
             connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
             # command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
-            command = f"echo man $HADOOP_HOME man && /opt/hadoop-3.2.1/bin/hadoop dfs -copyFromLocal -f {host_file_path} {self.hdfs_path}"
+            dynamic_hdfs_path = self._generate_hdfs_path(self.hdfs_path, filename=file_name)
+            # command = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {self.hdfs_path}"
+            command = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {dynamic_hdfs_path}"
             start_time = time.monotonic()
             result = await self.localmachine_con.run(command)
             end_time = time.monotonic()
