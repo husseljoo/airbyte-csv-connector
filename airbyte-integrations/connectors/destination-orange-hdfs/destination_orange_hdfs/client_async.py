@@ -55,12 +55,13 @@ class ClientAsync:
             print(f"item in queue of consumer {id}: {file_path}")
             # Terminate the consumer when "STOP" is encountered
             if file_path == "STOP":
+                queue.task_done()
                 break
             file_name = os.path.basename(file_path)
             host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
             connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
-            command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
-            # command = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {self.hdfs_path}"
+            # command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
+            command = f"echo man $HADOOP_HOME man && /opt/hadoop-3.2.1/bin/hadoop dfs -copyFromLocal -f {host_file_path} {self.hdfs_path}"
             start_time = time.monotonic()
             result = await self.localmachine_con.run(command)
             end_time = time.monotonic()
@@ -83,6 +84,7 @@ class ClientAsync:
         while True:
             item = await producer_queue.get()
             if not item:
+                producer_queue.task_done()
                 break  # equivalent to "STOP"
             stream_name, data = item
             source_host, source_port, source_username, source_password, source_path, file_name = (
@@ -112,6 +114,7 @@ class ClientAsync:
             )
             end_time = time.monotonic()
             io_blocking_time = end_time - start_time
+            print(f"IO blocking time for '{file_name}' copy to local : {io_blocking_time} seconds")
 
             await consumer_queue.put(f"{stream_name}/{file_name}")
             print(f"Producer {id} has copied {file_name} locally.")
