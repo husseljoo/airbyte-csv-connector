@@ -87,13 +87,14 @@ class ClientAsync:
             connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
             # command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
             dynamic_hdfs_path = self._evaluate_hdfs_dest(self.hdfs_path, filename=file_name)
+            command1 = f"$HADOOP_HOME/bin/hadoop dfs -mkdir -p {dynamic_hdfs_path}"
             if self.hdfs_file:
                 dynamic_hdfs_file = self._evaluate_hdfs_dest(self.hdfs_file, filename=file_name)
-                dynamic_hdfs_path = "{}/{}".format(dynamic_hdfs_path, dynamic_hdfs_file)
-            # command = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {self.hdfs_path}"
-            command = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {dynamic_hdfs_path}"
+                dynamic_hdfs_path = os.path.join(dynamic_hdfs_path, dynamic_hdfs_file)
+            command2 = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {dynamic_hdfs_path}"
+            commands = f"{command1} && {command2}"
             start_time = time.monotonic()
-            result = await self.localmachine_con.run(command)
+            result = await self.localmachine_con.run(commands)
             end_time = time.monotonic()
             io_blocking_time = end_time - start_time
             print(f"IO blocking time for '{file_name}' write to HDFS is: {io_blocking_time} seconds")
