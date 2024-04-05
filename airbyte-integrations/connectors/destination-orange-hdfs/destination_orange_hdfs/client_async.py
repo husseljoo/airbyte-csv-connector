@@ -2,6 +2,7 @@ import os
 import time
 import asyncio, asyncssh
 from airbyte_cdk.models.airbyte_protocol import AirbyteConnectionStatus, AirbyteMessage, ConfiguredAirbyteCatalog, Status, Type
+from datetime import datetime
 
 
 class ClientAsync:
@@ -53,11 +54,13 @@ class ClientAsync:
         con = await asyncssh.connect(HOSTNAME, 22, username=USERNAME, client_keys=[private_key], known_hosts=None)
         return con
 
-    def _evaluate_hdfs_dest(self, path, filename=None):
+    def _evaluate_hdfs_dest(self, path, filename=None, modification_time=None):
         try:
             vars = self.variables.copy()
             if filename:
                 vars["filename"] = filename
+            if modification_time:
+                vars["modification_time"] = datetime.fromtimestamp(modification_time)
 
             def evaluate_string(x):
                 return eval(f'f"{x}"', {}, vars)
@@ -76,20 +79,20 @@ class ClientAsync:
     async def consumer_write_hdfs(self, queue, id):
         print(f"CONSUMER {id} STARTED")
         while True:
-            file_path = await queue.get()
-            print(f"item in queue of consumer {id}: {file_path}")
+            data = await queue.get()
             # Terminate the consumer when "STOP" is encountered
-            if file_path == "STOP":
+            if data == "STOP":
                 queue.task_done()
                 break
+            file_path, modification_time = data["file_path"], data["modification_time"]
             file_name = os.path.basename(file_path)
             host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
             connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
             # command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
-            dynamic_hdfs_path = self._evaluate_hdfs_dest(self.hdfs_path, filename=file_name)
+            dynamic_hdfs_path = self._evaluate_hdfs_dest(self.hdfs_path, filename=file_name, modification_time=modification_time)
             command1 = f"$HADOOP_HOME/bin/hadoop dfs -mkdir -p {dynamic_hdfs_path}"
             if self.hdfs_file:
-                dynamic_hdfs_file = self._evaluate_hdfs_dest(self.hdfs_file, filename=file_name)
+                dynamic_hdfs_file = self._evaluate_hdfs_dest(self.hdfs_file, filename=file_name, modification_time=modification_time)
                 dynamic_hdfs_path = os.path.join(dynamic_hdfs_path, dynamic_hdfs_file)
             command2 = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {dynamic_hdfs_path}"
             commands = f"{command1} && {command2}"
@@ -118,13 +121,14 @@ class ClientAsync:
                 producer_queue.task_done()
                 break  # equivalent to "STOP"
             stream_name, data = item
-            source_host, source_port, source_username, source_password, source_path, file_name = (
+            source_host, source_port, source_username, source_password, source_path, file_name, modification_time = (
                 data["host"],
                 data["port"],
                 data["username"],
                 data["password"],
                 data["path"],
                 data["file_name"],
+                int(data["modification_time"]),
             )
             print(f"Starting to produce {file_name}\n")
             directory_path = os.path.join(self.CONNECTOR_LOCAL_DIR, stream_name)
@@ -147,18 +151,20 @@ class ClientAsync:
             io_blocking_time = end_time - start_time
             print(f"IO blocking time for '{file_name}' copy to local : {io_blocking_time} seconds")
 
-            await consumer_queue.put(f"{stream_name}/{file_name}")
+            data = {"file_path": os.path.join(stream_name, file_name), "modification_time": modification_time}
+            await consumer_queue.put(data)
             print(f"Producer {id} has copied {file_name} locally.")
             producer_queue.task_done()
 
     async def producer_copy_locally(self, queue, stream_name, data):
-        source_host, source_port, source_username, source_password, source_path, file_name = (
+        source_host, source_port, source_username, source_password, source_path, file_name, modification_time = (
             data["host"],
             data["port"],
             data["username"],
             data["password"],
             data["path"],
             data["file_name"],
+            data["modification_time"],
         )
         print(f"Starting to produce {file_name}\n")
         directory_path = os.path.join(self.CONNECTOR_LOCAL_DIR, stream_name)
