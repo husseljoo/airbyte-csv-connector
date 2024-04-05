@@ -173,9 +173,7 @@ class SourceOrangeFiles(Source):
 
         file_extension = config.get("file_extension", None)
         sftp_client = SftpClient(config)
-        for file in sftp_client.list_files(
-            target_time=prev_latest_mod_time, file_extension=file_extension
-        ):
+        for file in sftp_client.list_files(target_time=prev_latest_mod_time):
             data["modification_time"] = file.st_mtime
             data["file_name"] = file.filename
             latest_mod_time = max(latest_mod_time, file.st_mtime)

@@ -37,3 +37,15 @@ connectionSpecification:
       type: string
       title: "file extension"
       description: "The file extension to be included. (do not include the '.')"
+    min_file_age:
+      type: string
+      title: "minimum file age"
+      description: "minimum file age (modification time)"
+      pattern: ^[0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}$
+      pattern_descriptor: DD-HH-MM-SS
+    max_file_age:
+      type: string
+      title: "maximum file age"
+      description: "maximum file age (modification time)"
+      pattern: ^[0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}$
+      pattern_descriptor: DD-HH-MM-SS
