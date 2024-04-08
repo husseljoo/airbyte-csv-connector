@@ -33,6 +33,11 @@ connectionSpecification:
       description: "The starting date of the first file to be included (typically useful for very first sync)."
       pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$
       pattern_descriptor: YYYY-MM-DD
+    recursive_search:
+      type: boolean
+      title: "recursive search"
+      description: "Consider all files in subdirectories if present."
+      default: true
     file_extension:
       type: string
       title: "file extension"

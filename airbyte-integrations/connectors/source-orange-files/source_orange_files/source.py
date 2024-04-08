@@ -173,10 +173,11 @@ class SourceOrangeFiles(Source):
 
         file_extension = config.get("file_extension", None)
         sftp_client = SftpClient(config)
-        for file in sftp_client.list_files(target_time=prev_latest_mod_time):
-            data["modification_time"] = file.st_mtime
-            data["file_name"] = file.filename
-            latest_mod_time = max(latest_mod_time, file.st_mtime)
+        for record in sftp_client.list_files(target_time=prev_latest_mod_time):
+            data["path"] = record.path
+            data["file_name"] = record.file_name
+            data["modification_time"] = record.modification_time
+            latest_mod_time = max(latest_mod_time, record.modification_time)
             yield AirbyteMessage(
                 type=Type.RECORD,
                 record=AirbyteRecordMessage(
