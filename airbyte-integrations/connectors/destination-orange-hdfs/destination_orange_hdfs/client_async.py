@@ -153,7 +153,7 @@ class ClientAsync:
             )
             end_time = time.monotonic()
             io_blocking_time = end_time - start_time
-            print(f"IO blocking time for '{file_name}' copy to local : {io_blocking_time} seconds")
+            # print(f"IO blocking time for '{file_name}' copy to local : {io_blocking_time} seconds")
 
             data = {"file_path": os.path.join(stream_name, relative_file_path), "modification_time": modification_time}
             await consumer_queue.put(data)
@@ -196,11 +196,12 @@ class ClientAsync:
         for _ in range(self.producers_number):
             await producer_queue.put(None)  # equivalent to "STOP"
 
-        # # Run producer and consumer tasks concurrently
-        # all_tasks = producer_tasks + consumer_tasks
-        # await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
+        # Run producer and consumer tasks concurrently
+        all_tasks = producer_tasks + consumer_tasks
+        await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
+        print("finished downloading all files locally.")
 
-        await asyncio.gather(*producer_tasks)
+        # await asyncio.gather(*producer_tasks)
         for _ in range(self.consumers_number):
             await consumer_queue.put("STOP")
         await asyncio.gather(*consumer_tasks)
