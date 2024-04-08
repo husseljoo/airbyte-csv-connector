@@ -103,11 +103,16 @@ class SftpClient:
                 for x in attributes
                 if datetime.datetime.fromtimestamp(x[0].st_mtime) >= max_file_age_cutoff
             ]
-        Record = namedtuple("Record", ["path", "file_name", "modification_time"])
+        Record = namedtuple(
+            "Record", ["base_path", "file_path", "file_name", "modification_time"]
+        )
         records = []
-        for attr, path in attributes:
+        for attr, file_path in attributes:
             record = Record(
-                file_name=attr.filename, path=path, modification_time=attr.st_mtime
+                file_name=attr.filename,
+                base_path=self.path,
+                file_path=file_path,
+                modification_time=attr.st_mtime,
             )
             records.append(record)
 

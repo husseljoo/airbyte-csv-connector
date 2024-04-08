@@ -1,5 +1,6 @@
 import os
 import time
+import shutil
 import asyncio, asyncssh
 from airbyte_cdk.models.airbyte_protocol import AirbyteConnectionStatus, AirbyteMessage, ConfiguredAirbyteCatalog, Status, Type
 from datetime import datetime
@@ -121,12 +122,10 @@ class ClientAsync:
                 producer_queue.task_done()
                 break  # equivalent to "STOP"
             stream_name, data = item
-            source_host, source_port, source_username, source_password, source_path, file_name, modification_time = (
+            source_host, base_path, file_path, file_name, modification_time = (
                 data["host"],
-                data["port"],
-                data["username"],
-                data["password"],
-                data["path"],
+                data["base_path"],
+                data["file_path"],
                 data["file_name"],
                 int(data["modification_time"]),
             )
@@ -138,8 +137,13 @@ class ClientAsync:
                 await self.get_sftp_client(data)
             elif self.sftp_clients[source_host] == "in_progress":
                 await self.wait_for_sftp_client_connection(source_host)
-            remote_file_path = os.path.join(source_path, file_name)
-            local_file_path = os.path.join(directory_path, file_name)
+            remote_file_path = file_path
+            relative_file_path = os.path.relpath(file_path, base_path)
+            local_file_path = os.path.join(directory_path, relative_file_path)
+
+            rel_directory = os.path.dirname(local_file_path)
+            if not os.path.exists(rel_directory):
+                os.makedirs(rel_directory)
 
             start_time = time.monotonic()
             await self.sftp_clients[source_host].get(
@@ -151,7 +155,7 @@ class ClientAsync:
             io_blocking_time = end_time - start_time
             print(f"IO blocking time for '{file_name}' copy to local : {io_blocking_time} seconds")
 
-            data = {"file_path": os.path.join(stream_name, file_name), "modification_time": modification_time}
+            data = {"file_path": os.path.join(stream_name, relative_file_path), "modification_time": modification_time}
             await consumer_queue.put(data)
             print(f"Producer {id} has copied {file_name} locally.")
             producer_queue.task_done()
@@ -191,6 +195,11 @@ class ClientAsync:
             await producer_queue.put((stream_name, data))
         for _ in range(self.producers_number):
             await producer_queue.put(None)  # equivalent to "STOP"
+
+        # # Run producer and consumer tasks concurrently
+        # all_tasks = producer_tasks + consumer_tasks
+        # await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
+
         await asyncio.gather(*producer_tasks)
         for _ in range(self.consumers_number):
             await consumer_queue.put("STOP")
@@ -199,7 +208,7 @@ class ClientAsync:
         for stream_name in stream_names:
             directory_path = os.path.join(self.CONNECTOR_LOCAL_DIR, stream_name)
             if os.path.exists(directory_path):
-                os.removedirs(directory_path)
+                shutil.rmtree(directory_path)
         print("ALL FINISHED")
         self.close_connections()
         return results

@@ -83,9 +83,10 @@ class SourceOrangeFiles(Source):
         """
         streams = []
 
-        host, path = config.get("host"), config.get("path")
+        path, host = config.get("path"), config.get("host")
         path, host = path.replace("/", "-"), host.replace(".", "-")
-        stream_name = host + path
+        path = path[1:] if path[0] == "-" else path
+        stream_name = path + host
         # stream_name = "StreamName"
         json_schema = {
             "$schema": "http://json-schema.org/draft-07/schema#",
@@ -95,13 +96,14 @@ class SourceOrangeFiles(Source):
                 "file_name": {"type": "string"},
                 "host": {"type": "string"},
                 "port": {"type": "string"},
-                "path": {"type": "string"},
+                "base_path": {"type": "string"},
+                "file_path": {"type": "string"},
                 "username": {"type": "string"},
                 "password": {"type": "string"},
             },
         }
         default_cursor_field = ["modification_time"]
-        source_defined_primary_key = [["file_name"]]
+        source_defined_primary_key = [["file_path"]]
         supported_sync_modes = ["full_refresh", "incremental"]
 
         streams.append(
@@ -161,20 +163,19 @@ class SourceOrangeFiles(Source):
             prev_latest_mod_time = state_data.get(stream_name).get("modification_time")
 
         # I think it can be better to decouple source and destination (the source can easily change servers,direcories etc. without having to alter the destinaton settings, server hosts etc.)
-        host, port, username, password, path = self.parse_config(config)
+        host, port, username, password, base_path = self.parse_config(config)
         data = {
             "host": host,
             "port": port,
             "username": username,
             "password": password,
-            "path": path,
+            "base_path": base_path,
         }
         latest_mod_time = prev_latest_mod_time
 
-        file_extension = config.get("file_extension", None)
         sftp_client = SftpClient(config)
         for record in sftp_client.list_files(target_time=prev_latest_mod_time):
-            data["path"] = record.path
+            data["file_path"] = record.file_path
             data["file_name"] = record.file_name
             data["modification_time"] = record.modification_time
             latest_mod_time = max(latest_mod_time, record.modification_time)
