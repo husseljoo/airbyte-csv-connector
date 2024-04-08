@@ -156,34 +156,6 @@ class ClientAsync:
             print(f"Producer {id} has copied {file_name} locally.")
             producer_queue.task_done()
 
-    async def producer_copy_locally(self, queue, stream_name, data):
-        source_host, source_port, source_username, source_password, source_path, file_name, modification_time = (
-            data["host"],
-            data["port"],
-            data["username"],
-            data["password"],
-            data["path"],
-            data["file_name"],
-            data["modification_time"],
-        )
-        print(f"Starting to produce {file_name}\n")
-        directory_path = os.path.join(self.CONNECTOR_LOCAL_DIR, stream_name)
-        if not os.path.exists(directory_path):
-            os.makedirs(directory_path)
-        if source_host not in self.sftp_clients:
-            await self.get_sftp_client(data)
-        elif self.sftp_clients[source_host] == "in_progress":
-            await self.wait_for_sftp_client_connection(source_host)
-        remote_file_path = os.path.join(source_path, file_name)
-        local_file_path = os.path.join(directory_path, file_name)
-        await self.sftp_clients[source_host].get(
-            remotepaths=remote_file_path,
-            localpath=local_file_path,
-        )
-
-        await queue.put(f"{stream_name}/{file_name}")
-        print(f"producer has copied {file_name} locally.")
-
     async def wait_for_sftp_client_connection(self, host):
         while self.sftp_clients[host] == "in_progress":
             await asyncio.sleep(0.1)  # Adjust sleep duration as needed
@@ -217,9 +189,6 @@ class ClientAsync:
             stream_names.add(stream_name)
             data = message.record.data
             await producer_queue.put((stream_name, data))
-            # producer_task = asyncio.create_task(self.producer_copy_locally(consumer_queue, stream_name, data))
-            # await producer_task
-            # producer_tasks.append(producer_task)
         for _ in range(self.producers_number):
             await producer_queue.put(None)  # equivalent to "STOP"
         await asyncio.gather(*producer_tasks)

@@ -8,7 +8,6 @@ import asyncio
 from airbyte_cdk import AirbyteLogger
 from airbyte_cdk.destinations import Destination
 from airbyte_cdk.models.airbyte_protocol import AirbyteConnectionStatus, AirbyteMessage, ConfiguredAirbyteCatalog, Status, Type
-from destination_orange_hdfs.client import SftpClient
 from destination_orange_hdfs.client_async import ClientAsync
 
 
