@@ -7,7 +7,6 @@ from datetime import datetime
 
 
 class ClientAsync:
-    # CONNECTOR_LOCAL_DIR = "/home/husseljo/damn/orange-files/"
     CONNECTOR_LOCAL_DIR = "/local"
     HOST_LOCAL_DIR = "/tmp/airbyte_local/"
 
