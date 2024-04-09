@@ -20,6 +20,8 @@ class ClientAsync:
         self.airbyte_host_username = config.get("airbyte_host_username")
         self.airbyte_host_password = config.get("airbyte_host_password")
         self.airbyte_host_port = config.get("airbyte_host_port", 22)
+        self.zip_files = config.get("zip_files", False)
+        self.zip_workers_number = config.get("zip_workers_number", 5)
         self.localmachine_con = None
         self.sftp_clients = {}
         self.variables = self._get_variable_dict(config.get("variables", []))
@@ -55,8 +57,10 @@ class ClientAsync:
         con = await asyncssh.connect(HOSTNAME, 22, username=USERNAME, client_keys=[private_key], known_hosts=None)
         return con
 
-    def _evaluate_hdfs_dest(self, path, filename=None, modification_time=None):
+    def _evaluate_hdfs_dest(self, path, filename=None, modification_time=None, is_file=False):
         try:
+            if self.zip_files and filename.endswith(".zip") and is_file:
+                filename = filename[:-4]
             vars = self.variables.copy()
             if filename:
                 vars["filename"] = filename
@@ -72,18 +76,51 @@ class ClientAsync:
                     break
                 path = evaluated_string
 
+            if self.zip_files and is_file:
+                path = f"{path}.zip"
+
             return path
 
         except Exception as e:
             raise ValueError(f"Error evaluating string: {e}")
 
-    async def consumer_write_hdfs(self, queue, id):
-        print(f"CONSUMER {id} STARTED")
+    async def zip_files_locally(self, id):
+        print(f"Zip worker {id} STARTED")
         while True:
-            data = await queue.get()
+            data = await self.zip_queue.get()
             # Terminate the consumer when "STOP" is encountered
             if data == "STOP":
-                queue.task_done()
+                self.zip_queue.task_done()
+                break
+            file_path, modification_time = data["file_path"], data["modification_time"]
+            file_name = os.path.basename(file_path)
+            print("zipping file: ", file_name)
+
+            host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
+            connector_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
+            command = f"zip {host_file_path}.zip {host_file_path} && rm {host_file_path}"
+
+            start_time = time.monotonic()
+            result = await self.localmachine_con.run(command)
+            end_time = time.monotonic()
+            io_blocking_time = end_time - start_time
+            # print(f"IO blocking time for '{file_name}' zipping file is: {io_blocking_time} seconds")
+
+            if result.exit_status != 0:
+                print("standard output: ", result.stdout)
+                print("standard error: ", result.stderr)
+                raise Exception(f"Error while copying {file_name} to hdfs")
+            print(f"Zip worker {id} has zipped {file_name}.")
+            await self.consumer_queue.put({"file_path": f"{file_path}.zip", "modification_time": modification_time})
+            self.zip_queue.task_done()
+
+    async def consumer_write_hdfs(self, id):
+        print(f"CONSUMER {id} STARTED")
+        while True:
+            data = await self.consumer_queue.get()
+            # Terminate the consumer when "STOP" is encountered
+            if data == "STOP":
+                self.consumer_queue.task_done()
                 break
             file_path, modification_time = data["file_path"], data["modification_time"]
             file_name = os.path.basename(file_path)
@@ -93,7 +130,9 @@ class ClientAsync:
             dynamic_hdfs_path = self._evaluate_hdfs_dest(self.hdfs_path, filename=file_name, modification_time=modification_time)
             command1 = f"$HADOOP_HOME/bin/hadoop dfs -mkdir -p {dynamic_hdfs_path}"
             if self.hdfs_file:
-                dynamic_hdfs_file = self._evaluate_hdfs_dest(self.hdfs_file, filename=file_name, modification_time=modification_time)
+                dynamic_hdfs_file = self._evaluate_hdfs_dest(
+                    self.hdfs_file, filename=file_name, modification_time=modification_time, is_file=True
+                )
                 dynamic_hdfs_path = os.path.join(dynamic_hdfs_path, dynamic_hdfs_file)
             command2 = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {dynamic_hdfs_path}"
             commands = f"{command1} && {command2}"
@@ -112,14 +151,14 @@ class ClientAsync:
                 print("standard error: ", result.stderr)
                 raise Exception(f"Error while copying {file_name} to hdfs")
             print(f"Consumer {id} had written {file_name} to HDFS")
-            queue.task_done()
+            self.consumer_queue.task_done()
 
-    async def producer_copy_file_task(self, producer_queue, consumer_queue, id):
+    async def producer_copy_file_task(self, id, zip_files=False):
         print(f"PRODUCER {id} STARTED")
         while True:
-            item = await producer_queue.get()
+            item = await self.producer_queue.get()
             if not item:
-                producer_queue.task_done()
+                self.producer_queue.task_done()
                 break  # equivalent to "STOP"
             stream_name, data = item
             source_host, base_path, file_path, file_name, modification_time = (
@@ -129,7 +168,7 @@ class ClientAsync:
                 data["file_name"],
                 int(data["modification_time"]),
             )
-            print(f"Starting to produce {file_name}\n")
+            print(f"Starting to copy {file_name} locally.\n")
             directory_path = os.path.join(self.CONNECTOR_LOCAL_DIR, stream_name)
             if not os.path.exists(directory_path):
                 os.makedirs(directory_path)
@@ -156,9 +195,12 @@ class ClientAsync:
             # print(f"IO blocking time for '{file_name}' copy to local : {io_blocking_time} seconds")
 
             data = {"file_path": os.path.join(stream_name, relative_file_path), "modification_time": modification_time}
-            await consumer_queue.put(data)
+            if zip_files:
+                await self.zip_queue.put(data)
+            else:
+                await self.consumer_queue.put(data)
             print(f"Producer {id} has copied {file_name} locally.")
-            producer_queue.task_done()
+            self.producer_queue.task_done()
 
     async def wait_for_sftp_client_connection(self, host):
         while self.sftp_clients[host] == "in_progress":
@@ -179,11 +221,15 @@ class ClientAsync:
 
         stream_names = set()
         results = []
-        consumer_queue, producer_queue = asyncio.Queue(), asyncio.Queue()
-        consumer_tasks = [asyncio.create_task(self.consumer_write_hdfs(consumer_queue, i)) for i in range(self.consumers_number)]
-        producer_tasks = [
-            asyncio.create_task(self.producer_copy_file_task(producer_queue, consumer_queue, i)) for i in range(self.producers_number)
-        ]
+        self.consumer_queue, self.producer_queue = asyncio.Queue(), asyncio.Queue()
+        consumer_tasks = [asyncio.create_task(self.consumer_write_hdfs(i)) for i in range(self.consumers_number)]
+        producer_tasks = [asyncio.create_task(self.producer_copy_file_task(i, self.zip_files)) for i in range(self.producers_number)]
+
+        zip_tasks = []
+        if self.zip_files:
+            self.zip_queue = asyncio.Queue()
+            zip_tasks = [asyncio.create_task(self.zip_files_locally(i)) for i in range(self.zip_workers_number)]
+
         for message in input_messages:
             if message.type == Type.STATE:
                 results.append(message)
@@ -192,18 +238,25 @@ class ClientAsync:
             stream_name = message.record.stream
             stream_names.add(stream_name)
             data = message.record.data
-            await producer_queue.put((stream_name, data))
+            await self.producer_queue.put((stream_name, data))
         for _ in range(self.producers_number):
-            await producer_queue.put(None)  # equivalent to "STOP"
+            await self.producer_queue.put(None)  # equivalent to "STOP"
 
-        # Run producer and consumer tasks concurrently
-        all_tasks = producer_tasks + consumer_tasks
+        all_tasks = producer_tasks + consumer_tasks + zip_tasks if self.zip_files else producer_tasks + consumer_tasks
         await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
+        await asyncio.gather(*producer_tasks)
         print("finished downloading all files locally.")
+        if self.zip_files:
+            all_tasks = consumer_tasks + zip_tasks
+            for _ in range(self.zip_workers_number):
+                await self.zip_queue.put("STOP")
+            await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
+            await asyncio.gather(*zip_tasks)
+            print("finished zipping all files locally.")
 
         # await asyncio.gather(*producer_tasks)
         for _ in range(self.consumers_number):
-            await consumer_queue.put("STOP")
+            await self.consumer_queue.put("STOP")
         await asyncio.gather(*consumer_tasks)
 
         for stream_name in stream_names:

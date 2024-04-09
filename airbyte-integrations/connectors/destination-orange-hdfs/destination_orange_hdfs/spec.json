@@ -41,12 +41,12 @@
       },
       "airbyte_host_username": {
         "type": "string",
-        "order": 1,
+        "order": 2,
         "description": "airbyte_host username (used for ssh'ing into host to copyFromLocal into hdfs)"
       },
       "airbyte_host_password": {
         "type": "string",
-        "order": 2,
+        "order": 3,
         "airbyte_secret": true,
         "description": "airbyte_host corresponding password"
       },
@@ -55,21 +55,41 @@
         "default": 22,
         "description": "password of user in airbyte_host"
       },
+      "zip_files": {
+        "type": "boolean",
+        "default": false,
+        "description": "zip files before copying to hdfs",
+        "group": "workers"
+      },
+      "zip_workers_number": {
+        "type": "integer",
+        "default": 5,
+        "description": "number of zip workers number",
+        "group": "workers"
+      },
       "consumers_number": {
         "type": "integer",
         "default": 5,
-        "description": "Number of consumers that copy files to HDFS at once."
+        "description": "Number of consumers that copy files to HDFS at once.",
+        "group": "workers"
       },
       "producers_number": {
         "type": "integer",
         "default": 5,
-        "description": "Number of producers that copy files locally at once."
+        "description": "Number of producers that copy files locally at once.",
+        "group": "workers"
       },
       "sftp_max_requests": {
         "type": "integer",
         "default": 128,
         "description": "Maximum number of parallel chunk transfers at once."
       }
-    }
+    },
+    "groups": [
+      {
+        "id": "workers",
+        "title": "Workers"
+      }
+    ]
   }
 }
