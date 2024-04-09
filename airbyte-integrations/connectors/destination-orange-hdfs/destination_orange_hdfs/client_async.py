@@ -19,8 +19,8 @@ class ClientAsync:
         self.airbyte_host_username = config.get("airbyte_host_username")
         self.airbyte_host_password = config.get("airbyte_host_password")
         self.airbyte_host_port = config.get("airbyte_host_port", 22)
-        self.zip_files = config.get("zip_files", False)
-        self.zip_workers_number = config.get("zip_workers_number", 5)
+        self.compress = config.get("compress", False)
+        self.compress_workers_number = config.get("compress_workers_number", 5)
         self.localmachine_con = None
         self.sftp_clients = {}
         self.variables = self._get_variable_dict(config.get("variables", []))
@@ -58,8 +58,9 @@ class ClientAsync:
 
     def _evaluate_hdfs_dest(self, path, filename=None, modification_time=None, is_file=False):
         try:
-            if self.zip_files and filename.endswith(".zip") and is_file:
-                filename = filename[:-4]
+            extension = ""
+            if self.compress and is_file:
+                filename, extension = os.path.splitext(filename)
             vars = self.variables.copy()
             if filename:
                 vars["filename"] = filename
@@ -75,25 +76,25 @@ class ClientAsync:
                     break
                 path = evaluated_string
 
-            if self.zip_files and is_file:
-                path = f"{path}.zip"
+            if self.compress and is_file and extension:
+                path = f"{path}{extension}"
 
             return path
 
         except Exception as e:
             raise ValueError(f"Error evaluating string: {e}")
 
-    async def zip_files_locally(self, id):
-        print(f"Zip worker {id} STARTED")
+    async def compress_files_locally(self, id):
+        print(f"Compress worker {id} STARTED")
         while True:
-            data = await self.zip_queue.get()
+            data = await self.compress_queue.get()
             # Terminate the consumer when "STOP" is encountered
             if data == "STOP":
-                self.zip_queue.task_done()
+                self.compress_queue.task_done()
                 break
             file_path, modification_time = data["file_path"], data["modification_time"]
             file_name = os.path.basename(file_path)
-            print("zipping file: ", file_name)
+            print("compressing file: ", file_name)
 
             host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
             connector_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
@@ -103,15 +104,15 @@ class ClientAsync:
             result = await self.localmachine_con.run(command)
             end_time = time.monotonic()
             io_blocking_time = end_time - start_time
-            # print(f"IO blocking time for '{file_name}' zipping file is: {io_blocking_time} seconds")
+            # print(f"IO blocking time for '{file_name}' compressing file is: {io_blocking_time} seconds")
 
             if result.exit_status != 0:
                 print("standard output: ", result.stdout)
                 print("standard error: ", result.stderr)
                 raise Exception(f"Error while copying {file_name} to hdfs")
-            print(f"Zip worker {id} has zipped {file_name}.")
+            print(f"Compress worker {id} has compressed {file_name}.")
             await self.consumer_queue.put({"file_path": f"{file_path}.zip", "modification_time": modification_time})
-            self.zip_queue.task_done()
+            self.compress_queue.task_done()
 
     async def consumer_write_hdfs(self, id):
         print(f"CONSUMER {id} STARTED")
@@ -152,7 +153,7 @@ class ClientAsync:
             print(f"Consumer {id} had written {file_name} to HDFS")
             self.consumer_queue.task_done()
 
-    async def producer_copy_file_task(self, id, zip_files=False):
+    async def producer_copy_file_task(self, id, compress=False):
         print(f"PRODUCER {id} STARTED")
         while True:
             item = await self.producer_queue.get()
@@ -194,8 +195,8 @@ class ClientAsync:
             # print(f"IO blocking time for '{file_name}' copy to local : {io_blocking_time} seconds")
 
             data = {"file_path": os.path.join(stream_name, relative_file_path), "modification_time": modification_time}
-            if zip_files:
-                await self.zip_queue.put(data)
+            if compress:
+                await self.compress_queue.put(data)
             else:
                 await self.consumer_queue.put(data)
             print(f"Producer {id} has copied {file_name} locally.")
@@ -222,12 +223,12 @@ class ClientAsync:
         results = []
         self.consumer_queue, self.producer_queue = asyncio.Queue(), asyncio.Queue()
         consumer_tasks = [asyncio.create_task(self.consumer_write_hdfs(i)) for i in range(self.consumers_number)]
-        producer_tasks = [asyncio.create_task(self.producer_copy_file_task(i, self.zip_files)) for i in range(self.producers_number)]
+        producer_tasks = [asyncio.create_task(self.producer_copy_file_task(i, self.compress)) for i in range(self.producers_number)]
 
-        zip_tasks = []
-        if self.zip_files:
-            self.zip_queue = asyncio.Queue()
-            zip_tasks = [asyncio.create_task(self.zip_files_locally(i)) for i in range(self.zip_workers_number)]
+        compress_tasks = []
+        if self.compress:
+            self.compress_queue = asyncio.Queue()
+            compress_tasks = [asyncio.create_task(self.compress_files_locally(i)) for i in range(self.compress_workers_number)]
 
         for message in input_messages:
             if message.type == Type.STATE:
@@ -241,17 +242,17 @@ class ClientAsync:
         for _ in range(self.producers_number):
             await self.producer_queue.put(None)  # equivalent to "STOP"
 
-        all_tasks = producer_tasks + consumer_tasks + zip_tasks if self.zip_files else producer_tasks + consumer_tasks
+        all_tasks = producer_tasks + consumer_tasks + compress_tasks if self.compress else producer_tasks + consumer_tasks
         await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
         await asyncio.gather(*producer_tasks)
         print("finished downloading all files locally.")
-        if self.zip_files:
-            all_tasks = consumer_tasks + zip_tasks
-            for _ in range(self.zip_workers_number):
-                await self.zip_queue.put("STOP")
+        if self.compress:
+            all_tasks = consumer_tasks + compress_tasks
+            for _ in range(self.compress_workers_number):
+                await self.compress_queue.put("STOP")
             await asyncio.wait(all_tasks, return_when=asyncio.FIRST_COMPLETED)
-            await asyncio.gather(*zip_tasks)
-            print("finished zipping all files locally.")
+            await asyncio.gather(*compress_tasks)
+            print("finished compressing all files locally.")
 
         # await asyncio.gather(*producer_tasks)
         for _ in range(self.consumers_number):

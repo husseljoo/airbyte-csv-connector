@@ -55,16 +55,16 @@
         "default": 22,
         "description": "password of user in airbyte_host"
       },
-      "zip_files": {
+      "compress": {
         "type": "boolean",
         "default": false,
-        "description": "zip files before copying to hdfs",
+        "description": "compress files before copying to hdfs",
         "group": "workers"
       },
-      "zip_workers_number": {
+      "compress_workers_number": {
         "type": "integer",
         "default": 5,
-        "description": "number of zip workers number",
+        "description": "number of compress workers number",
         "group": "workers"
       },
       "consumers_number": {
