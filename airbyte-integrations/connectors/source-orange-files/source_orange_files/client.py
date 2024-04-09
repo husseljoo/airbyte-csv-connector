@@ -2,6 +2,7 @@
 import paramiko
 from paramiko.sftp_client import SFTPClient
 import stat
+import re
 import os
 import datetime
 from collections import namedtuple
@@ -15,6 +16,7 @@ class SftpClient:
         self.password = config.get("password")
         self.path = config.get("path")
         self.file_extension = config.get("file_extension")
+        self.regex_filter = config.get("regex_filter", None)
         self.min_file_age = config.get("min_file_age", None)
         self.max_file_age = config.get("max_file_age", None)
         self.recursive_search = config.get("recursive_search", False)
@@ -103,6 +105,10 @@ class SftpClient:
                 for x in attributes
                 if datetime.datetime.fromtimestamp(x[0].st_mtime) >= max_file_age_cutoff
             ]
+        if self.regex_filter:
+            pattern = re.compile(self.regex_filter)
+            attributes = [x for x in attributes if re.search(pattern, x[0].filename)]
+
         Record = namedtuple(
             "Record", ["base_path", "file_path", "file_name", "modification_time"]
         )

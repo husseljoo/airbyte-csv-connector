@@ -38,6 +38,10 @@ connectionSpecification:
       title: "recursive search"
       description: "Consider all files in subdirectories if present."
       default: true
+    regex_filter:
+      type: "string"
+      title: "regex filter"
+      description: "regex expression that will be applied to filter files."
     file_extension:
       type: string
       title: "file extension"
