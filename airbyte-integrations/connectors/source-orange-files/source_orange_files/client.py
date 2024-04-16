@@ -41,18 +41,23 @@ class SftpClient:
         files = self._listdir_sorted_by_modification_time(path_to_use, target_time)
         return files
 
-    def _list_files(self, path, recursive_search: bool = True):
+    def _list_files(self, path, recursive_search: bool = True, target_time=0):
         conn = self.connect()
         files = []
 
         def list_recursively(path, recursive_search):
             res = conn.listdir_attr(path=path)
             for item in res:
-                if recursive_search and stat.S_ISDIR(item.st_mode):
+                if (
+                    recursive_search
+                    and stat.S_ISDIR(item.st_mode)
+                    and item.st_mtime > target_time
+                ):
                     subdir_path = os.path.join(path, item.filename)
                     list_recursively(subdir_path, recursive_search)
                 else:
                     res = (item, os.path.join(path, item.filename))
+                    print(item.filename)
                     files.append(res)
 
         list_recursively(path, recursive_search)
@@ -64,7 +69,9 @@ class SftpClient:
         self, path: str = ".", target_time: int = 0
     ):
         current_time = datetime.datetime.now()
-        attributes = self._list_files(path, self.recursive_search)
+        attributes = self._list_files(
+            path, self.recursive_search, target_time=target_time
+        )
         attributes = list(
             filter(
                 lambda x: not stat.S_ISDIR(x[0].st_mode)
