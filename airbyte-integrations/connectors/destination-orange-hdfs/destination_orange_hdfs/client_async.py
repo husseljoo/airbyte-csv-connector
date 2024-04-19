@@ -3,7 +3,7 @@ import time
 import shutil
 import asyncio, asyncssh
 from airbyte_cdk.models.airbyte_protocol import AirbyteConnectionStatus, AirbyteMessage, ConfiguredAirbyteCatalog, Status, Type
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 class ClientAsync:
@@ -65,7 +65,7 @@ class ClientAsync:
             if filename:
                 vars["filename"] = filename
             if modification_time:
-                vars["modification_time"] = datetime.fromtimestamp(modification_time)
+                vars["modification_time"] = datetime.fromtimestamp(modification_time) + timedelta(hours=2)
 
             def evaluate_string(x):
                 return eval(f'f"{x}"', {}, vars)
@@ -168,6 +168,7 @@ class ClientAsync:
                 data["file_name"],
                 int(data["modification_time"]),
             )
+            print(f"modification_time: {modification_time}")
             print(f"Starting to copy {file_name} locally.\n")
             directory_path = os.path.join(self.CONNECTOR_LOCAL_DIR, stream_name)
             if not os.path.exists(directory_path):

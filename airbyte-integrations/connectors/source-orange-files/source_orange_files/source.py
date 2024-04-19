@@ -4,8 +4,9 @@
 
 
 import json
+import re
 import paramiko
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Generator
 
 from airbyte_cdk.logger import AirbyteLogger
@@ -27,7 +28,6 @@ from airbyte_cdk.models.airbyte_protocol import (
 )
 from airbyte_cdk.sources import Source
 from source_orange_files.client import SftpClient
-from datetime import datetime
 
 
 class SourceOrangeFiles(Source):
@@ -156,7 +156,13 @@ class SourceOrangeFiles(Source):
         prev_latest_mod_time = 0
         start_date = config.get("start_date", None)
         if not state and start_date:
-            input_date = datetime.strptime(start_date, "%Y-%m-%d")
+            input_date = (
+                datetime.strptime(start_date, "%Y-%m-%d")
+                if ":" not in start_date
+                else datetime.strptime(start_date, "%Y-%m-%d %H:%M")
+            )
+            # convert to UTC+2
+            input_date = input_date - timedelta(hours=2)
             prev_latest_mod_time = input_date.timestamp()
         elif state and sync_mode == SyncMode.incremental:
             state_data = dict(state[0].stream.stream_state)

@@ -48,16 +48,13 @@ class SftpClient:
         def list_recursively(path, recursive_search):
             res = conn.listdir_attr(path=path)
             for item in res:
-                if (
-                    recursive_search
-                    and stat.S_ISDIR(item.st_mode)
-                    and item.st_mtime > target_time
-                ):
+                if item.st_mtime < target_time:
+                    continue
+                if recursive_search and stat.S_ISDIR(item.st_mode):
                     subdir_path = os.path.join(path, item.filename)
                     list_recursively(subdir_path, recursive_search)
-                else:
+                elif stat.S_ISREG(item.st_mode):
                     res = (item, os.path.join(path, item.filename))
-                    print(item.filename)
                     files.append(res)
 
         list_recursively(path, recursive_search)
