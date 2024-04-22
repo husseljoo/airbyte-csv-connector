@@ -45,9 +45,7 @@ class ClientAsync:
         HOSTNAME = "172.17.0.1"
         if self.airbyte_host_username and self.airbyte_host_password:
             print("establishing local machine ssh connection using airbyte_host_username:{airbyte_host_username} and password.")
-            con = await asyncssh.connect(
-                HOSTNAME, 22, username=self.airbyte_host_username, password=self.airbyte_host_password, known_hosts=None
-            )
+            con = await asyncssh.connect(HOSTNAME, 22, username=self.airbyte_host_username, password=self.airbyte_host_password, known_hosts=None)
             return con
         private_key = "/local/airbyte-credentials/airbyte_key"
         # USERNAME = "husseljo"
@@ -130,9 +128,7 @@ class ClientAsync:
             dynamic_hdfs_path = self._evaluate_hdfs_dest(self.hdfs_path, filename=file_name, modification_time=modification_time)
             command1 = f"$HADOOP_HOME/bin/hadoop dfs -mkdir -p {dynamic_hdfs_path}"
             if self.hdfs_file:
-                dynamic_hdfs_file = self._evaluate_hdfs_dest(
-                    self.hdfs_file, filename=file_name, modification_time=modification_time, is_file=True
-                )
+                dynamic_hdfs_file = self._evaluate_hdfs_dest(self.hdfs_file, filename=file_name, modification_time=modification_time, is_file=True)
                 dynamic_hdfs_path = os.path.join(dynamic_hdfs_path, dynamic_hdfs_file)
             command2 = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {dynamic_hdfs_path}"
             commands = f"{command1} && {command2}"
