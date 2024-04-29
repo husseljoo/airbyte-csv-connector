@@ -39,6 +39,12 @@
           }
         }
       },
+      "compress": {
+        "type": "boolean",
+        "default": false,
+        "order": 3,
+        "description": "compress files before copying to hdfs"
+      },
       "airbyte_host_username": {
         "type": "string",
         "order": 2,
@@ -54,12 +60,6 @@
         "type": "integer",
         "default": 22,
         "description": "password of user in airbyte_host"
-      },
-      "compress": {
-        "type": "boolean",
-        "default": false,
-        "description": "compress files before copying to hdfs",
-        "group": "workers"
       },
       "compress_workers_number": {
         "type": "integer",
