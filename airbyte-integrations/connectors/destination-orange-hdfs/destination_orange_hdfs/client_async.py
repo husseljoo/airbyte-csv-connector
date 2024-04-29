@@ -4,6 +4,9 @@ import shutil
 import asyncio, asyncssh
 from airbyte_cdk.models.airbyte_protocol import AirbyteConnectionStatus, AirbyteMessage, ConfiguredAirbyteCatalog, Status, Type
 from datetime import datetime, timedelta
+import pydoop.hdfs as hdfs
+import concurrent.futures
+from threading import Lock
 
 
 class ClientAsync:
@@ -24,6 +27,17 @@ class ClientAsync:
         self.localmachine_con = None
         self.sftp_clients = {}
         self.variables = self._get_variable_dict(config.get("variables", []))
+        os.environ["HADOOP_USER_NAME"] = "airbyte"
+        self.setup_hadoop_config()
+
+    def setup_hadoop_config(self):
+        HADOOP_HOME = os.environ.get("HADOOP_HOME", "/opt/hadoop-3.3.4/")
+        core_site = os.path.join(self.CONNECTOR_LOCAL_DIR, "core-site.xml")
+        core_site_dest = os.path.join(HADOOP_HOME, "etc", "hadoop", "core-site.xml")
+        hdfs_site = os.path.join(self.CONNECTOR_LOCAL_DIR, "hdfs-site.xml")
+        hdfs_site_dest = os.path.join(HADOOP_HOME, "etc", "hadoop", "hdfs-site.xml")
+        shutil.copyfile(core_site, core_site_dest)
+        shutil.copyfile(hdfs_site, hdfs_site_dest)
 
     def _get_variable_dict(self, variables):
         return {var["variable_name"]: var["variable_value"] for var in variables}
@@ -40,19 +54,6 @@ class ClientAsync:
         sftp_client = await con.start_sftp_client()
         self.sftp_clients[host] = sftp_client
         return sftp_client
-
-    async def establish_localmachine_connection(self):
-        HOSTNAME = "172.17.0.1"
-        if self.airbyte_host_username and self.airbyte_host_password:
-            print("establishing local machine ssh connection using airbyte_host_username:{airbyte_host_username} and password.")
-            con = await asyncssh.connect(HOSTNAME, 22, username=self.airbyte_host_username, password=self.airbyte_host_password, known_hosts=None)
-            return con
-        private_key = "/local/airbyte-credentials/airbyte_key"
-        # USERNAME = "husseljo"
-        USERNAME = "root"
-        print("establishing local machine ssh connection using private key in:{private_key}.")
-        con = await asyncssh.connect(HOSTNAME, 22, username=USERNAME, client_keys=[private_key], known_hosts=None)
-        return con
 
     def _evaluate_hdfs_dest(self, path, filename=None, modification_time=None, is_file=False):
         try:
@@ -112,42 +113,42 @@ class ClientAsync:
             await self.consumer_queue.put({"file_path": f"{file_path}.zip", "modification_time": modification_time})
             self.compress_queue.task_done()
 
-    async def consumer_write_hdfs(self, id):
-        print(f"CONSUMER {id} STARTED")
-        while True:
-            data = await self.consumer_queue.get()
-            # Terminate the consumer when "STOP" is encountered
-            if data == "STOP":
-                self.consumer_queue.task_done()
-                break
-            file_path, modification_time = data["file_path"], data["modification_time"]
-            file_name = os.path.basename(file_path)
-            host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
-            connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
-            # command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
-            dynamic_hdfs_path = self._evaluate_hdfs_dest(self.hdfs_path, filename=file_name, modification_time=modification_time)
-            command1 = f"$HADOOP_HOME/bin/hadoop dfs -mkdir -p {dynamic_hdfs_path}"
-            if self.hdfs_file:
-                dynamic_hdfs_file = self._evaluate_hdfs_dest(self.hdfs_file, filename=file_name, modification_time=modification_time, is_file=True)
-                dynamic_hdfs_path = os.path.join(dynamic_hdfs_path, dynamic_hdfs_file)
-            command2 = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {dynamic_hdfs_path}"
-            commands = f"{command1} && {command2}"
-            start_time = time.monotonic()
-            result = await self.localmachine_con.run(commands)
-            end_time = time.monotonic()
-            io_blocking_time = end_time - start_time
-            print(f"IO blocking time for '{file_name}' write to HDFS is: {io_blocking_time} seconds")
+    # async def consumer_write_hdfs(self, id):
+    #     print(f"CONSUMER {id} STARTED")
+    #     while True:
+    #         data = await self.consumer_queue.get()
+    #         # Terminate the consumer when "STOP" is encountered
+    #         if data == "STOP":
+    #             self.consumer_queue.task_done()
+    #             break
+    #         file_path, modification_time = data["file_path"], data["modification_time"]
+    #         file_name = os.path.basename(file_path)
+    #         host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
+    #         connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
+    #         # command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
+    #         dynamic_hdfs_path = self._evaluate_hdfs_dest(self.hdfs_path, filename=file_name, modification_time=modification_time)
+    #         command1 = f"$HADOOP_HOME/bin/hadoop dfs -mkdir -p {dynamic_hdfs_path}"
+    #         if self.hdfs_file:
+    #             dynamic_hdfs_file = self._evaluate_hdfs_dest(self.hdfs_file, filename=file_name, modification_time=modification_time, is_file=True)
+    #             dynamic_hdfs_path = os.path.join(dynamic_hdfs_path, dynamic_hdfs_file)
+    #         command2 = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {dynamic_hdfs_path}"
+    #         commands = f"{command1} && {command2}"
+    #         start_time = time.monotonic()
+    #         result = await self.localmachine_con.run(commands)
+    #         end_time = time.monotonic()
+    #         io_blocking_time = end_time - start_time
+    #         print(f"IO blocking time for '{file_name}' write to HDFS is: {io_blocking_time} seconds")
 
-            print(f"Consumer {id}, exit_status for {file_name} output:", result.exit_status)
-            if result.exit_status == 0 and os.path.exists(connector_file_path):
-                os.remove(connector_file_path)
-                print(f"'{file_name}' cleaned up successfully.")
-            else:
-                print("standard output: ", result.stdout)
-                print("standard error: ", result.stderr)
-                raise Exception(f"Error while copying {file_name} to hdfs")
-            print(f"Consumer {id} had written {file_name} to HDFS")
-            self.consumer_queue.task_done()
+    #         print(f"Consumer {id}, exit_status for {file_name} output:", result.exit_status)
+    #         if result.exit_status == 0 and os.path.exists(connector_file_path):
+    #             os.remove(connector_file_path)
+    #             print(f"'{file_name}' cleaned up successfully.")
+    #         else:
+    #             print("standard output: ", result.stdout)
+    #             print("standard error: ", result.stderr)
+    #             raise Exception(f"Error while copying {file_name} to hdfs")
+    #         print(f"Consumer {id} had written {file_name} to HDFS")
+    #         self.consumer_queue.task_done()
 
     async def producer_copy_file_task(self, id, compress=False):
         print(f"PRODUCER {id} STARTED")
@@ -205,22 +206,61 @@ class ClientAsync:
         return self.sftp_clients[host]
 
     def close_connections(self):
-        if self.localmachine_con:
-            self.localmachine_con.close()
-            print("closed the localmachine_con")
+        # if self.localmachine_con:
+        #     self.localmachine_con.close()
+        #     print("closed the localmachine_con")
         if self.sftp_clients:
             for host, sftp_client in self.sftp_clients.items():
                 sftp_client.exit()
                 print(f"exited sftp client session for host {host}, sftp_client: {sftp_client})")
 
+    def write_file_to_hdfs(self, data):
+        file_path, modification_time = data["file_path"], data["modification_time"]
+        file_name = os.path.basename(file_path)
+        file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
+
+        dynamic_hdfs_path = self._evaluate_hdfs_dest(self.hdfs_path, filename=file_name, modification_time=modification_time)
+
+        handle = hdfs.hdfs(host="default", port=0, user=os.environ.get("HADOOP_USER_NAME", "airbyte"))
+
+        with self.lock:
+            if handle.exists(dynamic_hdfs_path) and handle.get_path_info(dynamic_hdfs_path).kind != "directory":
+                hdfs.rm(dynamic_hdfs_path)
+            hdfs.mkdir(dynamic_hdfs_path)
+
+            if self.hdfs_file:
+                dynamic_hdfs_file = self._evaluate_hdfs_dest(self.hdfs_file, filename=file_name, modification_time=modification_time, is_file=True)
+                dynamic_hdfs_path = os.path.join(dynamic_hdfs_path, dynamic_hdfs_file)
+            else:
+                dynamic_hdfs_path = os.path.join(dynamic_hdfs_path, os.path.basename(file_path))
+
+            if handle.exists(dynamic_hdfs_path):
+                hdfs.rm(dynamic_hdfs_path)
+        hdfs.put(file_path, dynamic_hdfs_path, mode="w")
+        print(f"{file_name} written to hdfs")
+
+    async def consumer_write_hdfs_pydoop(self, id, executor):
+        print(f"PYDOOP CONSUMER {id} STARTED")
+        while True:
+            data = await self.consumer_queue.get()
+            # Terminate the consumer when "STOP" is encountered
+            if data == "STOP":
+                self.consumer_queue.task_done()
+                break
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(executor, self.write_file_to_hdfs, data)
+
     async def run(self, input_messages):
-        self.localmachine_con = await self.establish_localmachine_connection()
+        # self.localmachine_con = await self.establish_localmachine_connection()
 
         stream_names = set()
         results = []
         self.consumer_queue, self.producer_queue = asyncio.Queue(), asyncio.Queue()
-        consumer_tasks = [asyncio.create_task(self.consumer_write_hdfs(i)) for i in range(self.consumers_number)]
+        self.lock = Lock()
+
         producer_tasks = [asyncio.create_task(self.producer_copy_file_task(i, self.compress)) for i in range(self.producers_number)]
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.consumers_number)
+        consumer_tasks = [asyncio.create_task(self.consumer_write_hdfs_pydoop(i, executor)) for i in range(self.consumers_number)]
 
         compress_tasks = []
         if self.compress:

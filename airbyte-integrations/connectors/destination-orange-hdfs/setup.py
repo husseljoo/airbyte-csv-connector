@@ -5,7 +5,7 @@
 
 from setuptools import find_packages, setup
 
-MAIN_REQUIREMENTS = ["airbyte-cdk", "paramiko~=3.4.0", "asyncssh~=2.14.2"]
+MAIN_REQUIREMENTS = ["airbyte-cdk", "paramiko~=3.4.0", "asyncssh~=2.14.2", "setuptools~=3.3.0", "pydoop~=2.0.0"]
 
 TEST_REQUIREMENTS = ["pytest~=6.2"]
 
