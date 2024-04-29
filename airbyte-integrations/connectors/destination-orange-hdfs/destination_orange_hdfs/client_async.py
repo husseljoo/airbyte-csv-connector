@@ -3,11 +3,12 @@ import time
 import shutil
 import asyncio, asyncssh
 from airbyte_cdk.models.airbyte_protocol import AirbyteConnectionStatus, AirbyteMessage, ConfiguredAirbyteCatalog, Status, Type
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pydoop.hdfs as hdfs
 import concurrent.futures
 from threading import Lock
 import gzip
+import pytz
 
 
 class ClientAsync:
@@ -65,7 +66,10 @@ class ClientAsync:
             if filename:
                 vars["filename"] = filename
             if modification_time:
-                vars["modification_time"] = datetime.fromtimestamp(modification_time) + timedelta(hours=2)
+                utc_datetime = datetime.utcfromtimestamp(modification_time)
+                localized_utc_datetime = utc_datetime.replace(tzinfo=timezone.utc)
+                local_datetime = localized_utc_datetime.astimezone(pytz.timezone("Africa/Cairo"))
+                vars["modification_time"] = local_datetime
 
             def evaluate_string(x):
                 return eval(f'f"{x}"', {}, vars)

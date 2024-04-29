@@ -6,8 +6,9 @@
 import json
 import re
 import paramiko
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Generator
+import pytz
 
 from airbyte_cdk.logger import AirbyteLogger
 from airbyte_cdk.models.airbyte_protocol import (
@@ -60,9 +61,7 @@ class SourceOrangeFiles(Source):
                 source_transport.connect(username=username, password=password)
             return AirbyteConnectionStatus(status=Status.SUCCEEDED)
         except Exception as e:
-            return AirbyteConnectionStatus(
-                status=Status.FAILED, message=f"An exception occurred: {str(e)}"
-            )
+            return AirbyteConnectionStatus(status=Status.FAILED, message=f"An exception occurred: {str(e)}")
 
     def discover(self, logger: AirbyteLogger, config: json) -> AirbyteCatalog:
         """
@@ -156,14 +155,13 @@ class SourceOrangeFiles(Source):
         prev_latest_mod_time = 0
         start_date = config.get("start_date", None)
         if not state and start_date:
-            input_date = (
-                datetime.strptime(start_date, "%Y-%m-%d")
-                if ":" not in start_date
-                else datetime.strptime(start_date, "%Y-%m-%d %H:%M")
-            )
-            # convert to UTC+2
-            input_date = input_date - timedelta(hours=2)
-            prev_latest_mod_time = input_date.timestamp()
+            local_datetime = datetime.strptime(start_date, "%Y-%m-%d") if ":" not in start_date else datetime.strptime(start_date, "%Y-%m-%d %H:%M")
+            # Localize the datetime object to your local timezone
+            local_timezone = pytz.timezone("Africa/Cairo")
+            local_datetime = local_datetime.replace(tzinfo=local_timezone)
+            # Convert the localized datetime object to UTC
+            utc_datetime = local_datetime.astimezone(timezone.utc)
+            prev_latest_mod_time = utc_datetime.timestamp()
         elif state and sync_mode == SyncMode.incremental:
             state_data = dict(state[0].stream.stream_state)
             prev_latest_mod_time = state_data.get(stream_name).get("modification_time")
@@ -200,9 +198,7 @@ class SourceOrangeFiles(Source):
             state=AirbyteStateMessage(
                 type=AirbyteStateType.STREAM,
                 stream=AirbyteStreamState(
-                    stream_descriptor=StreamDescriptor(
-                        name=stream_name, namespace=None
-                    ),
+                    stream_descriptor=StreamDescriptor(name=stream_name, namespace=None),
                     stream_state=AirbyteStateBlob.parse_obj(next_state),
                 ),
             ),
