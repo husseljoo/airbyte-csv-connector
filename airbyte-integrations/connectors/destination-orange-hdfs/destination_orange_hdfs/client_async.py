@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import pydoop.hdfs as hdfs
 import concurrent.futures
 from threading import Lock
+import gzip
 
 
 class ClientAsync:
@@ -83,7 +84,21 @@ class ClientAsync:
         except Exception as e:
             raise ValueError(f"Error evaluating string: {e}")
 
-    async def compress_files_locally(self, id):
+    def compress_to_gzip(self, data):
+        file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, data["file_path"])
+        file_name = os.path.basename(file_path)
+        zipped_path = file_path + ".gz"
+        print("compressing file: ", file_name)
+
+        with open(file_path, "rb") as f_in:
+            with gzip.open(zipped_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+        return zipped_path
+
+    async def compress_files_locally(self, id, executor):
         print(f"Compress worker {id} STARTED")
         while True:
             data = await self.compress_queue.get()
@@ -91,27 +106,10 @@ class ClientAsync:
             if data == "STOP":
                 self.compress_queue.task_done()
                 break
-            file_path, modification_time = data["file_path"], data["modification_time"]
-            file_name = os.path.basename(file_path)
-            print("compressing file: ", file_name)
 
-            host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
-            connector_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
-            command = f"zip {host_file_path}.zip {host_file_path} && rm {host_file_path}"
-
-            start_time = time.monotonic()
-            result = await self.localmachine_con.run(command)
-            end_time = time.monotonic()
-            io_blocking_time = end_time - start_time
-            # print(f"IO blocking time for '{file_name}' compressing file is: {io_blocking_time} seconds")
-
-            if result.exit_status != 0:
-                print("standard output: ", result.stdout)
-                print("standard error: ", result.stderr)
-                raise Exception(f"Error while copying {file_name} to hdfs")
-            print(f"Compress worker {id} has compressed {file_name}.")
-            await self.consumer_queue.put({"file_path": f"{file_path}.zip", "modification_time": modification_time})
-            self.compress_queue.task_done()
+            loop = asyncio.get_running_loop()
+            zipped_path = await loop.run_in_executor(executor, self.compress_to_gzip, data)
+            await self.consumer_queue.put({"file_path": zipped_path, "modification_time": data["modification_time"]})
 
     # async def consumer_write_hdfs(self, id):
     #     print(f"CONSUMER {id} STARTED")
@@ -165,8 +163,6 @@ class ClientAsync:
                 data["file_name"],
                 int(data["modification_time"]),
             )
-            print(f"modification_time: {modification_time}")
-            print(f"Starting to copy {file_name} locally.\n")
             directory_path = os.path.join(self.CONNECTOR_LOCAL_DIR, stream_name)
             if not os.path.exists(directory_path):
                 os.makedirs(directory_path)
@@ -215,21 +211,24 @@ class ClientAsync:
                 print(f"exited sftp client session for host {host}, sftp_client: {sftp_client})")
 
     def write_file_to_hdfs(self, data):
-        file_path, modification_time = data["file_path"], data["modification_time"]
+        modification_time = data["modification_time"]
+        file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, data["file_path"])
         file_name = os.path.basename(file_path)
-        file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
 
         dynamic_hdfs_path = self._evaluate_hdfs_dest(self.hdfs_path, filename=file_name, modification_time=modification_time)
 
         handle = hdfs.hdfs(host="default", port=0, user=os.environ.get("HADOOP_USER_NAME", "airbyte"))
 
+        dynamic_hdfs_file = ""
+        if self.hdfs_file:
+            dynamic_hdfs_file = self._evaluate_hdfs_dest(self.hdfs_file, filename=file_name, modification_time=modification_time, is_file=True)
+
         with self.lock:
-            if handle.exists(dynamic_hdfs_path) and handle.get_path_info(dynamic_hdfs_path).kind != "directory":
+            if handle.exists(dynamic_hdfs_path) and handle.get_path_info(dynamic_hdfs_path)["kind"] != "directory":
                 hdfs.rm(dynamic_hdfs_path)
             hdfs.mkdir(dynamic_hdfs_path)
 
-            if self.hdfs_file:
-                dynamic_hdfs_file = self._evaluate_hdfs_dest(self.hdfs_file, filename=file_name, modification_time=modification_time, is_file=True)
+            if dynamic_hdfs_file:
                 dynamic_hdfs_path = os.path.join(dynamic_hdfs_path, dynamic_hdfs_file)
             else:
                 dynamic_hdfs_path = os.path.join(dynamic_hdfs_path, os.path.basename(file_path))
@@ -237,6 +236,9 @@ class ClientAsync:
             if handle.exists(dynamic_hdfs_path):
                 hdfs.rm(dynamic_hdfs_path)
         hdfs.put(file_path, dynamic_hdfs_path, mode="w")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
         print(f"{file_name} written to hdfs")
 
     async def consumer_write_hdfs_pydoop(self, id, executor):
@@ -259,13 +261,14 @@ class ClientAsync:
         self.lock = Lock()
 
         producer_tasks = [asyncio.create_task(self.producer_copy_file_task(i, self.compress)) for i in range(self.producers_number)]
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.consumers_number)
-        consumer_tasks = [asyncio.create_task(self.consumer_write_hdfs_pydoop(i, executor)) for i in range(self.consumers_number)]
+        consumer_executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.consumers_number)
+        consumer_tasks = [asyncio.create_task(self.consumer_write_hdfs_pydoop(i, consumer_executor)) for i in range(self.consumers_number)]
 
         compress_tasks = []
         if self.compress:
+            compress_executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.compress_workers_number)
             self.compress_queue = asyncio.Queue()
-            compress_tasks = [asyncio.create_task(self.compress_files_locally(i)) for i in range(self.compress_workers_number)]
+            compress_tasks = [asyncio.create_task(self.compress_files_locally(i, compress_executor)) for i in range(self.compress_workers_number)]
 
         for message in input_messages:
             if message.type == Type.STATE:
