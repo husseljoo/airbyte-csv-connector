@@ -4,11 +4,10 @@
 
 
 import json
-import re
 import paramiko
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Dict, Generator
-import pytz
+from zoneinfo import ZoneInfo
 
 from airbyte_cdk.logger import AirbyteLogger
 from airbyte_cdk.models.airbyte_protocol import (
@@ -156,12 +155,8 @@ class SourceOrangeFiles(Source):
         start_date = config.get("start_date", None)
         if not state and start_date:
             local_datetime = datetime.strptime(start_date, "%Y-%m-%d") if ":" not in start_date else datetime.strptime(start_date, "%Y-%m-%d %H:%M")
-            # Localize the datetime object to your local timezone
-            local_timezone = pytz.timezone("Africa/Cairo")
-            local_datetime = local_datetime.replace(tzinfo=local_timezone)
-            # Convert the localized datetime object to UTC
-            utc_datetime = local_datetime.astimezone(timezone.utc)
-            prev_latest_mod_time = utc_datetime.timestamp()
+            local_datetime = local_datetime.replace(tzinfo=ZoneInfo("Africa/Cairo"))
+            prev_latest_mod_time = local_datetime.timestamp()
         elif state and sync_mode == SyncMode.incremental:
             state_data = dict(state[0].stream.stream_state)
             prev_latest_mod_time = state_data.get(stream_name).get("modification_time")
