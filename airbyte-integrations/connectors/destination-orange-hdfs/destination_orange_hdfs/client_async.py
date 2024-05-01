@@ -8,7 +8,7 @@ import pydoop.hdfs as hdfs
 import concurrent.futures
 from threading import Lock
 import gzip
-import pytz
+from zoneinfo import ZoneInfo
 
 
 class ClientAsync:
@@ -66,9 +66,8 @@ class ClientAsync:
             if filename:
                 vars["filename"] = filename
             if modification_time:
-                utc_datetime = datetime.utcfromtimestamp(modification_time)
-                localized_utc_datetime = utc_datetime.replace(tzinfo=timezone.utc)
-                local_datetime = localized_utc_datetime.astimezone(pytz.timezone("Africa/Cairo"))
+                utc_datetime = datetime.utcfromtimestamp(modification_time).replace(tzinfo=ZoneInfo("UTC"))
+                local_datetime = utc_datetime.astimezone(ZoneInfo("Africa/Cairo"))
                 vars["modification_time"] = local_datetime
 
             def evaluate_string(x):
@@ -114,43 +113,6 @@ class ClientAsync:
             loop = asyncio.get_running_loop()
             zipped_path = await loop.run_in_executor(executor, self.compress_to_gzip, data)
             await self.consumer_queue.put({"file_path": zipped_path, "modification_time": data["modification_time"]})
-
-    # async def consumer_write_hdfs(self, id):
-    #     print(f"CONSUMER {id} STARTED")
-    #     while True:
-    #         data = await self.consumer_queue.get()
-    #         # Terminate the consumer when "STOP" is encountered
-    #         if data == "STOP":
-    #             self.consumer_queue.task_done()
-    #             break
-    #         file_path, modification_time = data["file_path"], data["modification_time"]
-    #         file_name = os.path.basename(file_path)
-    #         host_file_path = os.path.join(self.HOST_LOCAL_DIR, file_path)
-    #         connector_file_path = os.path.join(self.CONNECTOR_LOCAL_DIR, file_path)
-    #         # command = f"docker cp {host_file_path} namenode:/ && docker exec namenode hadoop dfs -copyFromLocal -f {file_name} {self.hdfs_path} && docker exec namenode sh -c 'rm {file_name}'"
-    #         dynamic_hdfs_path = self._evaluate_hdfs_dest(self.hdfs_path, filename=file_name, modification_time=modification_time)
-    #         command1 = f"$HADOOP_HOME/bin/hadoop dfs -mkdir -p {dynamic_hdfs_path}"
-    #         if self.hdfs_file:
-    #             dynamic_hdfs_file = self._evaluate_hdfs_dest(self.hdfs_file, filename=file_name, modification_time=modification_time, is_file=True)
-    #             dynamic_hdfs_path = os.path.join(dynamic_hdfs_path, dynamic_hdfs_file)
-    #         command2 = f"$HADOOP_HOME/bin/hadoop dfs -copyFromLocal -f {host_file_path} {dynamic_hdfs_path}"
-    #         commands = f"{command1} && {command2}"
-    #         start_time = time.monotonic()
-    #         result = await self.localmachine_con.run(commands)
-    #         end_time = time.monotonic()
-    #         io_blocking_time = end_time - start_time
-    #         print(f"IO blocking time for '{file_name}' write to HDFS is: {io_blocking_time} seconds")
-
-    #         print(f"Consumer {id}, exit_status for {file_name} output:", result.exit_status)
-    #         if result.exit_status == 0 and os.path.exists(connector_file_path):
-    #             os.remove(connector_file_path)
-    #             print(f"'{file_name}' cleaned up successfully.")
-    #         else:
-    #             print("standard output: ", result.stdout)
-    #             print("standard error: ", result.stderr)
-    #             raise Exception(f"Error while copying {file_name} to hdfs")
-    #         print(f"Consumer {id} had written {file_name} to HDFS")
-    #         self.consumer_queue.task_done()
 
     async def producer_copy_file_task(self, id, compress=False):
         print(f"PRODUCER {id} STARTED")
@@ -206,9 +168,6 @@ class ClientAsync:
         return self.sftp_clients[host]
 
     def close_connections(self):
-        # if self.localmachine_con:
-        #     self.localmachine_con.close()
-        #     print("closed the localmachine_con")
         if self.sftp_clients:
             for host, sftp_client in self.sftp_clients.items():
                 sftp_client.exit()

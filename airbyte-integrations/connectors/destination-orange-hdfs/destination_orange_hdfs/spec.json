@@ -24,6 +24,16 @@
         "type": "array",
         "order": 2,
         "always_show": true,
+        "default": [
+          {
+            "variable_name": "dt",
+            "variable_value": "{modification_time.strftime('%Y-%m-%d')}"
+          },
+          {
+            "variable_name": "h",
+            "variable_value": "{modification_time.strftime('%H')}"
+          }
+        ],
         "items": {
           "type": "object",
           "required": ["variable_name", "variable_value"],
