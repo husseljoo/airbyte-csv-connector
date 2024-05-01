@@ -9,6 +9,7 @@ import concurrent.futures
 from threading import Lock
 import gzip
 from zoneinfo import ZoneInfo
+import re
 
 
 class ClientAsync:
@@ -21,9 +22,6 @@ class ClientAsync:
         self.consumers_number = config.get("consumers_number", 5)
         self.producers_number = config.get("producers_number", 5)
         self.max_requests = config.get("sftp_max_requests", 128)
-        self.airbyte_host_username = config.get("airbyte_host_username")
-        self.airbyte_host_password = config.get("airbyte_host_password")
-        self.airbyte_host_port = config.get("airbyte_host_port", 22)
         self.compress = config.get("compress", False)
         self.compress_workers_number = config.get("compress_workers_number", 5)
         self.localmachine_con = None
@@ -31,6 +29,8 @@ class ClientAsync:
         self.variables = self._get_variable_dict(config.get("variables", []))
         os.environ["HADOOP_USER_NAME"] = "airbyte"
         self.setup_hadoop_config()
+        self.file_date_method = config.get("file_date_method")["method"]
+        self.filename_date_regex = config.get("file_date_method")["filename_date_regex"] if self.file_date_method == "filename_date" else None
 
     def setup_hadoop_config(self):
         HADOOP_HOME = os.environ.get("HADOOP_HOME", "/opt/hadoop-3.3.4/")
@@ -60,15 +60,25 @@ class ClientAsync:
     def _evaluate_hdfs_dest(self, path, filename=None, modification_time=None, is_file=False):
         try:
             extension = ""
-            if self.compress and is_file:
+            if filename and self.compress and is_file:
                 filename, extension = os.path.splitext(filename)
             vars = self.variables.copy()
             if filename:
                 vars["filename"] = filename
-            if modification_time:
+            match = False
+            if filename and self.file_date_method == "filename_date" and self.filename_date_regex:
+                pattern = rf"{self.filename_date_regex}"
+                match = re.search(pattern, filename)
+                if match:
+                    date_str, time_str = match.groups()
+                    local_datetime = datetime.strptime(date_str + "_" + time_str, "%d%m%Y_%H%M%S").replace(tzinfo=ZoneInfo("Africa/Cairo"))
+                    vars["date"] = local_datetime
+            if not match and modification_time:
+                if self.file_date_method == "filename_date":
+                    print(f"Regex: {self.filename_date_regex} did not match for filename {filename}.")
                 utc_datetime = datetime.utcfromtimestamp(modification_time).replace(tzinfo=ZoneInfo("UTC"))
                 local_datetime = utc_datetime.astimezone(ZoneInfo("Africa/Cairo"))
-                vars["modification_time"] = local_datetime
+                vars["date"] = local_datetime
 
             def evaluate_string(x):
                 return eval(f'f"{x}"', {}, vars)

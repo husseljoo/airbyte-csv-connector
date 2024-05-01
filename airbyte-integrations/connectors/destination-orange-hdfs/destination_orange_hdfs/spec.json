@@ -26,12 +26,12 @@
         "always_show": true,
         "default": [
           {
-            "variable_name": "dt",
-            "variable_value": "{modification_time.strftime('%Y-%m-%d')}"
+            "variable_name": "dt_formatted",
+            "variable_value": "{date.strftime('%Y-%m-%d')}"
           },
           {
             "variable_name": "h",
-            "variable_value": "{modification_time.strftime('%H')}"
+            "variable_value": "{date.strftime('%H')}"
           }
         ],
         "items": {
@@ -53,23 +53,45 @@
         "type": "boolean",
         "default": false,
         "order": 3,
+        "always_show": true,
         "description": "compress files before copying to hdfs"
       },
-      "airbyte_host_username": {
-        "type": "string",
-        "order": 2,
-        "description": "airbyte_host username (used for ssh'ing into host to copyFromLocal into hdfs)"
-      },
-      "airbyte_host_password": {
-        "type": "string",
-        "order": 3,
-        "airbyte_secret": true,
-        "description": "airbyte_host corresponding password"
-      },
-      "airbyte_host_port": {
-        "type": "integer",
-        "default": 22,
-        "description": "password of user in airbyte_host"
+      "file_date_method": {
+        "type": "object",
+        "order": 4,
+        "title": "File Date Extraction Method",
+        "display_type": "radio",
+        "oneOf": [
+          {
+            "title": "From Sftp server modification_time",
+            "description": "Uses the modification time (unix timestamp) of the file present in the sftp server.",
+            "required": ["method"],
+            "properties": {
+              "method": {
+                "type": "string",
+                "const": "modication_time_date",
+                "order": 0
+              }
+            }
+          },
+          {
+            "title": "From filename using regex",
+            "description": "Extract the file date from the filename using regex.",
+            "required": ["method", "filename_date_regex"],
+            "properties": {
+              "method": {
+                "type": "string",
+                "const": "filename_date",
+                "order": 0
+              },
+              "filename_date_regex": {
+                "type": "string",
+                "title": "Regex of the filename date extraction",
+                "default": "(\\d{8})_(\\d{6})"
+              }
+            }
+          }
+        ]
       },
       "compress_workers_number": {
         "type": "integer",
