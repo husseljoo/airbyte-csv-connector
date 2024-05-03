@@ -5,6 +5,7 @@
 
 import json
 import paramiko
+import time, os, hashlib
 from datetime import datetime, timezone
 from typing import Dict, Generator
 from zoneinfo import ZoneInfo
@@ -81,10 +82,18 @@ class SourceOrangeFiles(Source):
         """
         streams = []
 
+        def generate_unique_hash():
+            unique_str = f"{time.time()}{os.urandom(32)}"
+            hash_object = hashlib.sha256(unique_str.encode())
+            hex_dig = hash_object.hexdigest()
+            return hex_dig
+
         path, host = config.get("path"), config.get("host")
         path, host = path.replace("/", "-"), host.replace(".", "-")
         path = path[1:] if path[0] == "-" else path
-        stream_name = path + host
+        hash_str = "_" + generate_unique_hash()
+        stream_name = path + host + hash_str
+
         # stream_name = "StreamName"
         json_schema = {
             "$schema": "http://json-schema.org/draft-07/schema#",
