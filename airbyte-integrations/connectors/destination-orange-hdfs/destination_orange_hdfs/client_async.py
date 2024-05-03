@@ -31,6 +31,7 @@ class ClientAsync:
         self.setup_hadoop_config()
         self.file_date_method = config.get("file_date_method")["method"]
         self.filename_date_regex = config.get("file_date_method")["filename_date_regex"] if self.file_date_method == "filename_date" else None
+        self.filename_date_format = config.get("file_date_method")["filename_date_format"] if self.file_date_method == "filename_date" else None
 
     def setup_hadoop_config(self):
         HADOOP_HOME = os.environ.get("HADOOP_HOME", "/opt/hadoop-3.3.4/")
@@ -66,16 +67,25 @@ class ClientAsync:
             if filename:
                 vars["filename"] = filename
             match = False
-            if filename and self.file_date_method == "filename_date" and self.filename_date_regex:
-                pattern = rf"{self.filename_date_regex}"
-                match = re.search(pattern, filename)
-                if match:
-                    date_str, time_str = match.groups()
-                    local_datetime = datetime.strptime(date_str + "_" + time_str, "%d%m%Y_%H%M%S").replace(tzinfo=ZoneInfo("Africa/Cairo"))
-                    vars["date"] = local_datetime
+            err = False
+
+            try:
+                if filename and self.file_date_method == "filename_date" and self.filename_date_regex and self.filename_date_format:
+                    pattern = rf"{self.filename_date_regex}"
+                    match = re.search(pattern, filename)
+                    if match:
+                        date_string = match.group()
+                        local_datetime = datetime.strptime(date_string, self.filename_date_format).replace(tzinfo=ZoneInfo("Africa/Cairo"))
+                        vars["date"] = local_datetime
+            except Exception as e:
+                print("An error occured while parsing date in filename_date option:", e)
+                print("Falling back to modification time date mechanism.")
+                match, err = False, True
+
             if not match and modification_time:
-                if self.file_date_method == "filename_date":
+                if self.file_date_method == "filename_date" and not err:
                     print(f"Regex: {self.filename_date_regex} did not match for filename {filename}.")
+                    print("Falling back to modification time date mechanism.")
                 utc_datetime = datetime.utcfromtimestamp(modification_time).replace(tzinfo=ZoneInfo("UTC"))
                 local_datetime = utc_datetime.astimezone(ZoneInfo("Africa/Cairo"))
                 vars["date"] = local_datetime

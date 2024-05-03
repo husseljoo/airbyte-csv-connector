@@ -6,7 +6,7 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "Destination Orange Hdfs",
     "type": "object",
-    "required": ["hdfs_path"],
+    "required": ["hdfs_path", "sftp_max_requests"],
     "additionalProperties": false,
     "properties": {
       "hdfs_path": {
@@ -77,7 +77,11 @@
           {
             "title": "From filename using regex",
             "description": "Extract the file date from the filename using regex.",
-            "required": ["method", "filename_date_regex"],
+            "required": [
+              "method",
+              "filename_date_regex",
+              "filename_date_format"
+            ],
             "properties": {
               "method": {
                 "type": "string",
@@ -87,34 +91,52 @@
               "filename_date_regex": {
                 "type": "string",
                 "title": "Regex of the filename date extraction",
+                "order": 1,
                 "default": "(\\d{8})_(\\d{6})"
+              },
+              "filename_date_format": {
+                "type": "string",
+                "title": "The date format of the filename date extraction. The format parameter uses the same directives as those used by pythons strftime()e.g. %d%m%Y_%H%M%S",
+                "order": 2,
+                "default": "%d%m%Y_%H%M%S"
               }
             }
           }
         ]
       },
+      "producers_number": {
+        "type": "integer",
+        "default": 5,
+        "order": 0,
+        "description": "Number of producers that copy files locally at once, defaults to 5.",
+        "minimum": 1,
+        "maximum": 100,
+        "group": "workers"
+      },
       "compress_workers_number": {
         "type": "integer",
         "default": 5,
-        "description": "number of compress workers number",
+        "order": 1,
+        "description": "number of compress workers number, defaults to 5.",
+        "minimum": 1,
+        "maximum": 100,
         "group": "workers"
       },
       "consumers_number": {
         "type": "integer",
         "default": 5,
-        "description": "Number of consumers that copy files to HDFS at once.",
-        "group": "workers"
-      },
-      "producers_number": {
-        "type": "integer",
-        "default": 5,
-        "description": "Number of producers that copy files locally at once.",
+        "order": 2,
+        "description": "Number of consumers that copy files to HDFS at once, defaults to 5.",
+        "minimum": 1,
+        "maximum": 100,
         "group": "workers"
       },
       "sftp_max_requests": {
         "type": "integer",
         "default": 128,
-        "description": "Maximum number of parallel chunk transfers at once."
+        "minimum": 1,
+        "maximum": 250,
+        "description": "Maximum number of parallel chunk transfers at once, defaults to 128."
       }
     },
     "groups": [
