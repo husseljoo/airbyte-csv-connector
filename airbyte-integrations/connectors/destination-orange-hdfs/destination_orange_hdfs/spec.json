@@ -92,13 +92,13 @@
                 "type": "string",
                 "title": "Regex of the filename date extraction",
                 "order": 1,
-                "default": "(\\d{8})_(\\d{6})"
+                "default": "(\\d{8})_(\\d{4})"
               },
               "filename_date_format": {
                 "type": "string",
                 "title": "The date format of the filename date extraction. The format parameter uses the same directives as those used by pythons strftime()e.g. %d%m%Y_%H%M%S",
                 "order": 2,
-                "default": "%d%m%Y_%H%M%S"
+                "default": "%d%m%Y_%H%M"
               }
             }
           }
